@@ -51,12 +51,65 @@ function ActivationScreen({ onActivated }) {
   const [device] = useState(() => getDeviceIdentity());
   const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(null);
+  const [showQuickConnect, setShowQuickConnect] = useState(false);
+  const [serverUrl, setServerUrl] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [connectError, setConnectError] = useState('');
+  const [m3uInput, setM3uInput] = useState('');
   const panelUrl = 'https://panel.dashplayer.tv';
 
   const copyToClipboard = (text, field) => {
     navigator.clipboard.writeText(text).catch(() => {});
     setCopied(field);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  // Parse M3U URL to extract server, username, password
+  const parseM3uUrl = (url) => {
+    try {
+      const u = new URL(url);
+      const params = u.searchParams;
+      const user = params.get('username');
+      const pass = params.get('password');
+      if (user && pass) {
+        const base = `${u.protocol}//${u.host}`;
+        return { url: base, username: user, password: pass };
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const handleM3uPaste = (val) => {
+    setM3uInput(val);
+    const parsed = parseM3uUrl(val.trim());
+    if (parsed) {
+      setServerUrl(parsed.url);
+      setUsername(parsed.username);
+      setPassword(parsed.password);
+      setConnectError('');
+    }
+  };
+
+  const handleQuickConnect = async () => {
+    if (!serverUrl || !username || !password) {
+      setConnectError('Please fill in all fields or paste an M3U URL');
+      return;
+    }
+    setChecking(true);
+    setConnectError('');
+    try {
+      const api = createXtreamApi(serverUrl, username, password);
+      const data = await api.authenticate();
+      if (data && data.user_info) {
+        onActivated({ url: serverUrl, username, password });
+      } else {
+        setConnectError('Could not authenticate. Check your credentials.');
+      }
+    } catch (e) {
+      setConnectError('Connection failed: ' + e.message);
+    }
+    setChecking(false);
   };
 
   const handleReload = () => {
@@ -109,10 +162,44 @@ function ActivationScreen({ onActivated }) {
               <button className="activation-btn activation-btn-reload" onClick={handleReload} disabled={checking}>
                 {checking ? 'Checking...' : 'RELOAD'}
               </button>
-              <button className="activation-btn activation-btn-exit">
-                EXIT
+              <button className="activation-btn activation-btn-reload" onClick={() => setShowQuickConnect(!showQuickConnect)}>
+                {showQuickConnect ? 'HIDE' : 'ADD PLAYLIST'}
               </button>
             </div>
+
+            {showQuickConnect && (
+              <div className="quick-connect-section">
+                <div className="activation-field">
+                  <label className="activation-label">Paste M3U URL or Xtream Login</label>
+                  <input
+                    className="quick-connect-input"
+                    placeholder="http://server:port/get.php?username=...&password=..."
+                    value={m3uInput}
+                    onChange={e => handleM3uPaste(e.target.value)}
+                  />
+                </div>
+                <div className="quick-connect-fields">
+                  <div className="activation-field">
+                    <label className="activation-label">Server URL</label>
+                    <input className="quick-connect-input" placeholder="http://server:port" value={serverUrl} onChange={e => setServerUrl(e.target.value)} />
+                  </div>
+                  <div className="quick-connect-row">
+                    <div className="activation-field" style={{flex: 1}}>
+                      <label className="activation-label">Username</label>
+                      <input className="quick-connect-input" placeholder="username" value={username} onChange={e => setUsername(e.target.value)} />
+                    </div>
+                    <div className="activation-field" style={{flex: 1}}>
+                      <label className="activation-label">Password</label>
+                      <input className="quick-connect-input" placeholder="password" value={password} onChange={e => setPassword(e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+                <button className="activation-btn activation-btn-reload" onClick={handleQuickConnect} disabled={checking} style={{marginTop: 8, width: '100%'}}>
+                  {checking ? 'Connecting...' : 'CONNECT'}
+                </button>
+                {connectError && <p style={{color: '#ef4444', fontSize: 12, marginTop: 6}}>{connectError}</p>}
+              </div>
+            )}
           </div>
         </div>
 

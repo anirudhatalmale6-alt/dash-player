@@ -102,6 +102,26 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 }
 .activation-btn-exit:hover { background: rgba(0,0,0,0.08); }
 
+.quick-connect-section {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid rgba(124,58,237,0.12);
+}
+.quick-connect-input {
+  width: 100%; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid rgba(124,58,237,0.2); background: rgba(124,58,237,0.04);
+  font-size: 12px; color: var(--text); outline: none;
+  font-family: 'Inter', sans-serif;
+}
+.quick-connect-input:focus {
+  border-color: var(--purple); background: white;
+}
+.quick-connect-fields {
+  margin-top: 8px;
+}
+.quick-connect-row {
+  display: flex; gap: 8px;
+}
+
 .activation-brand {
   width: 280px; padding: 40px 32px;
   background: linear-gradient(160deg, #f5f3ff, #ede9fe, #e8deff);
