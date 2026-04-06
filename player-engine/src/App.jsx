@@ -520,7 +520,7 @@ function SettingsScreen({ onBack }) {
   const [pinMsg, setPinMsg] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState('parental');
+  const [activeTab, setActiveTab] = useState('account');
 
   const handleSetPin = () => {
     if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
@@ -561,10 +561,21 @@ function SettingsScreen({ onBack }) {
     setTimeout(() => setResetMsg(''), 5000);
   };
 
+  // Mock Xtream account info (in production fetched from provider API)
+  const accountInfo = {
+    status: 'Active',
+    expDate: '2027-03-15',
+    maxConnections: 2,
+    activeCons: 1,
+    username: 'demo_user',
+    createdAt: '2025-01-10',
+    isTrial: false,
+  };
+
   const tabs = [
+    { id: 'account', label: 'Account', icon: '👤' },
     { id: 'parental', label: 'Parental Control', icon: '🔒' },
     { id: 'device', label: 'Device Info', icon: '📱' },
-    { id: 'player', label: 'Player', icon: '▶' },
     { id: 'about', label: 'About', icon: 'ℹ' },
   ];
 
@@ -592,6 +603,67 @@ function SettingsScreen({ onBack }) {
 
         {/* Settings Content */}
         <div className="settings-content">
+          {activeTab === 'account' && (
+            <div className="settings-panel">
+              <div className="settings-card">
+                <h3 className="settings-card-title">Account Information</h3>
+                <p className="settings-card-desc">Your Xtream Codes subscription details from the provider.</p>
+                <div className="settings-account-grid">
+                  <div className="settings-account-item">
+                    <div className="settings-account-icon" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>&#10003;</div>
+                    <div className="settings-account-detail">
+                      <span className="settings-account-label">Account Status</span>
+                      <span className="settings-account-value" style={{ color: '#10b981' }}>{accountInfo.status.toUpperCase()}</span>
+                    </div>
+                  </div>
+                  <div className="settings-account-item">
+                    <div className="settings-account-icon">&#128197;</div>
+                    <div className="settings-account-detail">
+                      <span className="settings-account-label">Expire Date</span>
+                      <span className="settings-account-value">{accountInfo.expDate}</span>
+                    </div>
+                  </div>
+                  <div className="settings-account-item">
+                    <div className="settings-account-icon">&#128279;</div>
+                    <div className="settings-account-detail">
+                      <span className="settings-account-label">Max Connections</span>
+                      <span className="settings-account-value">{accountInfo.maxConnections}</span>
+                    </div>
+                  </div>
+                  <div className="settings-account-item">
+                    <div className="settings-account-icon">&#128101;</div>
+                    <div className="settings-account-detail">
+                      <span className="settings-account-label">Active Connections</span>
+                      <span className="settings-account-value">{accountInfo.activeCons} / {accountInfo.maxConnections}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-card">
+                <h3 className="settings-card-title">Subscription Details</h3>
+                <div className="settings-device-info">
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">Username</span>
+                    <span className="settings-device-value">{accountInfo.username}</span>
+                  </div>
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">Created</span>
+                    <span className="settings-device-value">{accountInfo.createdAt}</span>
+                  </div>
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">Trial Account</span>
+                    <span className="settings-device-value">{accountInfo.isTrial ? 'Yes' : 'No'}</span>
+                  </div>
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">User Agent</span>
+                    <span className="settings-device-value">DashPlayer/1.0</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'parental' && (
             <div className="settings-panel">
               <div className="settings-card">
@@ -713,42 +785,6 @@ function SettingsScreen({ onBack }) {
                   </div>
                 )}
                 {resetMsg && <p className="settings-msg info">{resetMsg}</p>}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'player' && (
-            <div className="settings-panel">
-              <div className="settings-card">
-                <h3 className="settings-card-title">Player Settings</h3>
-                <div className="settings-option">
-                  <div className="settings-option-info">
-                    <span className="settings-option-label">Auto-play next channel</span>
-                    <span className="settings-option-desc">Automatically switch to next channel when current ends</span>
-                  </div>
-                  <div className="settings-toggle active"><div className="settings-toggle-dot" /></div>
-                </div>
-                <div className="settings-option">
-                  <div className="settings-option-info">
-                    <span className="settings-option-label">Hardware acceleration</span>
-                    <span className="settings-option-desc">Use hardware decoding for better performance</span>
-                  </div>
-                  <div className="settings-toggle active"><div className="settings-toggle-dot" /></div>
-                </div>
-                <div className="settings-option">
-                  <div className="settings-option-info">
-                    <span className="settings-option-label">EPG auto-update</span>
-                    <span className="settings-option-desc">Refresh TV Guide data every 6 hours</span>
-                  </div>
-                  <div className="settings-toggle active"><div className="settings-toggle-dot" /></div>
-                </div>
-                <div className="settings-option">
-                  <div className="settings-option-info">
-                    <span className="settings-option-label">Buffer size</span>
-                    <span className="settings-option-desc">Stream buffer duration</span>
-                  </div>
-                  <span className="settings-option-value">3 seconds</span>
-                </div>
               </div>
             </div>
           )}
