@@ -1,6 +1,37 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { mockData } from './services/xtreamApi';
+import axios from 'axios';
 import './styles.css';
+
+/* ── Xtream API helper ── */
+function createXtreamApi(url, username, password) {
+  const baseUrl = url.replace(/\/$/, '');
+  const req = async (action, params = {}) => {
+    try {
+      const res = await axios.get(`${baseUrl}/player_api.php`, {
+        params: { username, password, action, ...params },
+        headers: { 'User-Agent': 'DashPlayer/1.0' },
+        timeout: 15000,
+      });
+      return res.data;
+    } catch (e) {
+      console.warn('Xtream API error:', e.message);
+      return null;
+    }
+  };
+  return {
+    authenticate: () => req(),
+    getLiveCategories: () => req('get_live_categories'),
+    getLiveStreams: (catId) => req('get_live_streams', catId ? { category_id: catId } : {}),
+    getVodCategories: () => req('get_vod_categories'),
+    getVodStreams: (catId) => req('get_vod_streams', catId ? { category_id: catId } : {}),
+    getSeriesCategories: () => req('get_series_categories'),
+    getSeries: (catId) => req('get_series', catId ? { category_id: catId } : {}),
+    getEPG: (streamId) => req('get_short_epg', { stream_id: streamId }),
+    getLiveUrl: (streamId, ext = 'ts') => `${baseUrl}/live/${username}/${password}/${streamId}.${ext}`,
+    getVodUrl: (streamId, ext = 'mp4') => `${baseUrl}/movie/${username}/${password}/${streamId}.${ext}`,
+  };
+}
 
 /* ── Generate a persistent device identity ── */
 function getDeviceIdentity() {
@@ -219,25 +250,73 @@ function HomeScreen({ onNavigate, credentials, playerLicense }) {
 }
 
 /* ── LIVE TV SCREEN ── */
-function LiveTVScreen({ onBack }) {
-  const [categories] = useState([{ category_id: 'all', category_name: 'All Channels' }, ...mockData.categories]);
+function LiveTVScreen({ onBack, api }) {
+  const [categories, setCategories] = useState([{ category_id: 'all', category_name: 'All Channels' }]);
+  const [channels, setChannels] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [epgData, setEpgData] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const channels = mockData.channels;
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      setLoading(true);
+      if (api) {
+        const [cats, streams] = await Promise.all([
+          api.getLiveCategories(),
+          api.getLiveStreams(),
+        ]);
+        if (!cancelled) {
+          if (cats && Array.isArray(cats) && cats.length > 0) {
+            setCategories([{ category_id: 'all', category_name: 'All Channels' }, ...cats]);
+          } else {
+            setCategories([{ category_id: 'all', category_name: 'All Channels' }, ...mockData.categories]);
+          }
+          if (streams && Array.isArray(streams) && streams.length > 0) {
+            setChannels(streams);
+          } else {
+            setChannels(mockData.channels);
+          }
+        }
+      } else {
+        setCategories([{ category_id: 'all', category_name: 'All Channels' }, ...mockData.categories]);
+        setChannels(mockData.channels);
+      }
+      if (!cancelled) setLoading(false);
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, [api]);
+
   const filtered = channels.filter(ch => {
-    const matchCat = selectedCategory === 'all' || ch.category_id === selectedCategory;
+    const matchCat = selectedCategory === 'all' || String(ch.category_id) === String(selectedCategory);
     const matchSearch = !searchQuery || ch.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchCat && matchSearch;
   });
 
   useEffect(() => {
     if (selectedChannel) {
-      setEpgData(mockData.generateEPG(selectedChannel.num));
+      if (api) {
+        api.getEPG(selectedChannel.stream_id).then(data => {
+          if (data && data.epg_listings && data.epg_listings.length > 0) {
+            setEpgData(data.epg_listings.map((e, i) => ({
+              id: e.id || i,
+              title: e.title ? atob(e.title) : 'No Title',
+              description: e.description ? atob(e.description) : '',
+              start: new Date(e.start * 1000 || e.start).toISOString(),
+              end: new Date(e.end * 1000 || e.end).toISOString(),
+            })));
+          } else {
+            setEpgData(mockData.generateEPG(selectedChannel.num || selectedChannel.stream_id));
+          }
+        });
+      } else {
+        setEpgData(mockData.generateEPG(selectedChannel.num || selectedChannel.stream_id));
+      }
     }
-  }, [selectedChannel]);
+  }, [selectedChannel, api]);
 
   const getCurrentProgram = (num) => {
     const epg = mockData.generateEPG(num);
@@ -285,19 +364,23 @@ function LiveTVScreen({ onBack }) {
 
         {/* Channel List */}
         <div className="section-channel-list">
-          {filtered.map(ch => {
-            const prog = getCurrentProgram(ch.num);
+          {loading && <div className="loading-indicator">Loading channels...</div>}
+          {!loading && filtered.map(ch => {
+            const prog = getCurrentProgram(ch.num || ch.stream_id);
             return (
               <div
                 key={ch.stream_id}
                 className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
                 onClick={() => setSelectedChannel(ch)}
               >
-                <span className="ch-num">{ch.num}</span>
-                <div className="ch-icon">{ch.name.charAt(0)}</div>
+                <span className="ch-num">{ch.num || ch.stream_id}</span>
+                {ch.stream_icon ? (
+                  <img className="ch-icon-img" src={ch.stream_icon} alt="" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                ) : null}
+                <div className="ch-icon" style={ch.stream_icon ? { display: 'none' } : {}}>{ch.name.charAt(0)}</div>
                 <div className="ch-info">
                   <div className="ch-name">{ch.name}</div>
-                  <div className="ch-prog">{prog?.title || 'No info'}</div>
+                  <div className="ch-prog">{prog?.title || ch.epg_channel_id || 'No info'}</div>
                 </div>
                 {selectedChannel?.stream_id === ch.stream_id && <div className="ch-live-dot" />}
               </div>
@@ -346,18 +429,43 @@ function LiveTVScreen({ onBack }) {
 }
 
 /* ── VOD / SERIES SCREEN ── */
-function MediaScreen({ type, onBack }) {
+function MediaScreen({ type, onBack, api }) {
   const isVod = type === 'vod';
   const title = isVod ? 'Movies' : 'Series';
-  const allCategories = isVod ? mockData.vodCategories : mockData.seriesCategories;
-  const allItems = isVod ? mockData.vodStreams : mockData.series;
-  const categories = [{ category_id: 'all', category_name: `All ${title}` }, ...allCategories];
 
+  const [categories, setCategories] = useState([{ category_id: 'all', category_name: `All ${title}` }]);
+  const [allItems, setAllItems] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      setLoading(true);
+      const fallbackCats = isVod ? mockData.vodCategories : mockData.seriesCategories;
+      const fallbackItems = isVod ? mockData.vodStreams : mockData.series;
+      if (api) {
+        const [cats, items] = await Promise.all([
+          isVod ? api.getVodCategories() : api.getSeriesCategories(),
+          isVod ? api.getVodStreams() : api.getSeries(),
+        ]);
+        if (!cancelled) {
+          setCategories([{ category_id: 'all', category_name: `All ${title}` }, ...(cats && Array.isArray(cats) && cats.length > 0 ? cats : fallbackCats)]);
+          setAllItems(items && Array.isArray(items) && items.length > 0 ? items : fallbackItems);
+        }
+      } else {
+        setCategories([{ category_id: 'all', category_name: `All ${title}` }, ...fallbackCats]);
+        setAllItems(fallbackItems);
+      }
+      if (!cancelled) setLoading(false);
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, [api, type]);
 
   const filtered = allItems.filter(item => {
-    const matchCat = selectedCategory === 'all' || item.category_id === selectedCategory;
+    const matchCat = selectedCategory === 'all' || String(item.category_id) === String(selectedCategory);
     const matchSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchCat && matchSearch;
   });
@@ -381,12 +489,12 @@ function MediaScreen({ type, onBack }) {
             {categories.map(cat => (
               <div
                 key={cat.category_id}
-                className={`sidebar-cat-item ${selectedCategory === cat.category_id ? 'active' : ''}`}
+                className={`sidebar-cat-item ${String(selectedCategory) === String(cat.category_id) ? 'active' : ''}`}
                 onClick={() => setSelectedCategory(cat.category_id)}
               >
                 <span>{cat.category_name}</span>
                 <span className="sidebar-cat-count">
-                  {cat.category_id === 'all' ? allItems.length : allItems.filter(i => i.category_id === cat.category_id).length}
+                  {cat.category_id === 'all' ? allItems.length : allItems.filter(i => String(i.category_id) === String(cat.category_id)).length}
                 </span>
               </div>
             ))}
@@ -394,9 +502,13 @@ function MediaScreen({ type, onBack }) {
         </div>
 
         <div className="section-media-grid">
-          {filtered.map(item => (
+          {loading && <div className="loading-indicator">Loading {title.toLowerCase()}...</div>}
+          {!loading && filtered.map(item => (
             <div key={item.stream_id || item.series_id} className="media-card">
-              <div className="media-poster">{item.name.charAt(0)}</div>
+              {item.stream_icon || item.cover ? (
+                <img className="media-poster-img" src={item.stream_icon || item.cover} alt="" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+              ) : null}
+              <div className="media-poster" style={(item.stream_icon || item.cover) ? { display: 'none' } : {}}>{item.name.charAt(0)}</div>
               <div className="media-info">
                 <div className="media-title">{item.name}</div>
                 {item.rating && (
@@ -510,7 +622,7 @@ function RadioScreen({ onBack }) {
 }
 
 /* ── SETTINGS SCREEN ── */
-function SettingsScreen({ onBack }) {
+function SettingsScreen({ onBack, api }) {
   const [device, setDevice] = useState(() => getDeviceIdentity());
   const [pinEnabled, setPinEnabled] = useState(() => localStorage.getItem('dash_pin_enabled') === 'true');
   const [pin, setPin] = useState(() => localStorage.getItem('dash_pin') || '');
@@ -520,6 +632,40 @@ function SettingsScreen({ onBack }) {
   const [resetMsg, setResetMsg] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('account');
+  const [accountLoading, setAccountLoading] = useState(true);
+  const [accountInfo, setAccountInfo] = useState({
+    status: 'Active',
+    expDate: '2027-03-15',
+    maxConnections: 2,
+    activeCons: 1,
+    username: 'demo_user',
+    createdAt: '2025-01-10',
+    isTrial: false,
+  });
+
+  useEffect(() => {
+    if (api) {
+      setAccountLoading(true);
+      api.authenticate().then(data => {
+        if (data && data.user_info) {
+          const u = data.user_info;
+          const expDate = u.exp_date || 'Unlimited';
+          setAccountInfo({
+            status: u.status || 'Active',
+            expDate: expDate === '' || expDate === '0' ? 'Unlimited' : expDate,
+            maxConnections: u.max_connections || 1,
+            activeCons: u.active_cons || 0,
+            username: u.username || 'N/A',
+            createdAt: u.created_at || 'N/A',
+            isTrial: u.is_trial === '1' || u.is_trial === 1,
+          });
+        }
+        setAccountLoading(false);
+      });
+    } else {
+      setAccountLoading(false);
+    }
+  }, [api]);
 
   const handleSetPin = () => {
     if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
@@ -558,17 +704,6 @@ function SettingsScreen({ onBack }) {
     setShowResetConfirm(false);
     setResetMsg('Device Key has been reset. You will need to re-activate this device.');
     setTimeout(() => setResetMsg(''), 5000);
-  };
-
-  // Mock Xtream account info (in production fetched from provider API)
-  const accountInfo = {
-    status: 'Active',
-    expDate: '2027-03-15',
-    maxConnections: 2,
-    activeCons: 1,
-    username: 'demo_user',
-    createdAt: '2025-01-10',
-    isTrial: false,
   };
 
   const tabs = [
@@ -906,6 +1041,14 @@ export default function App() {
   const [credentials, setCredentials] = useState(null);
   const [screen, setScreen] = useState('home');
   const [playerLicense] = useState(() => getPlayerLicense());
+  const [api, setApi] = useState(null);
+
+  // Create API instance when credentials change
+  useEffect(() => {
+    if (credentials && credentials.url && credentials.username && credentials.password) {
+      setApi(createXtreamApi(credentials.url, credentials.username, credentials.password));
+    }
+  }, [credentials]);
 
   // Check if trial has expired
   const isTrialExpired = playerLicense.type === 'trial' && playerLicense.trialDaysLeft <= 0;
@@ -927,15 +1070,15 @@ export default function App() {
 
   switch (screen) {
     case 'live':
-      return <LiveTVScreen onBack={() => setScreen('home')} />;
+      return <LiveTVScreen onBack={() => setScreen('home')} api={api} />;
     case 'vod':
-      return <MediaScreen type="vod" onBack={() => setScreen('home')} />;
+      return <MediaScreen type="vod" onBack={() => setScreen('home')} api={api} />;
     case 'series':
-      return <MediaScreen type="series" onBack={() => setScreen('home')} />;
+      return <MediaScreen type="series" onBack={() => setScreen('home')} api={api} />;
     case 'radio':
       return <RadioScreen onBack={() => setScreen('home')} />;
     case 'settings':
-      return <SettingsScreen onBack={() => setScreen('home')} />;
+      return <SettingsScreen onBack={() => setScreen('home')} api={api} />;
     default:
       return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} />;
   }
