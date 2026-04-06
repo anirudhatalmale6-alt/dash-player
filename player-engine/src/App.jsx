@@ -138,7 +138,7 @@ function ActivationScreen({ onActivated }) {
 }
 
 /* ── HOME SCREEN ── */
-function HomeScreen({ onNavigate, credentials }) {
+function HomeScreen({ onNavigate, credentials, playerLicense }) {
   const [time, setTime] = useState(new Date());
   const [device] = useState(() => getDeviceIdentity());
 
@@ -212,7 +212,7 @@ function HomeScreen({ onNavigate, credentials }) {
         <div className="home-playlist-info">
           MAC: <strong>{device.mac}</strong>
         </div>
-        <div className="home-version">Player Activated: <strong>Unlimited</strong></div>
+        <div className="home-version">Player Activated: <strong>{getPlayerStatusText(playerLicense)}</strong></div>
       </div>
     </div>
   );
@@ -810,13 +810,113 @@ function SettingsScreen({ onBack }) {
   );
 }
 
+/* ── TRIAL EXPIRED SCREEN ── */
+function TrialExpiredScreen() {
+  const [device] = useState(() => getDeviceIdentity());
+  const panelUrl = 'https://panel.dashplayer.tv';
+  const qrSize = 140;
+
+  return (
+    <div className="activation-screen">
+      <div className="activation-container">
+        <div className="activation-info">
+          <div className="activation-info-inner">
+            <div className="trial-expired-icon">&#9888;</div>
+            <h2 className="trial-expired-title">Your Trial Has Ended</h2>
+            <p className="trial-expired-desc">
+              Your free trial period has expired. To continue using Dash Player,
+              please activate your device using the details below.
+            </p>
+
+            <a href={panelUrl} className="activation-url">{panelUrl}</a>
+
+            <div className="activation-field">
+              <label className="activation-label">Mac Address</label>
+              <div className="activation-value-row">
+                <span className="activation-value">{device.mac}</span>
+              </div>
+            </div>
+
+            <div className="activation-field">
+              <label className="activation-label">Device Key</label>
+              <div className="activation-value-row">
+                <span className="activation-value">{device.key}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="activation-brand">
+          <div className="activation-logo">D</div>
+          <div className="activation-app-name">Dash Player</div>
+          <div className="activation-qr">
+            <div className="activation-qr-placeholder">
+              <svg width={qrSize} height={qrSize} viewBox="0 0 140 140">
+                <rect width="140" height="140" rx="12" fill="white"/>
+                <rect x="12" y="12" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="18" y="18" width="24" height="24" rx="2" fill="white"/>
+                <rect x="24" y="24" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="92" y="12" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="98" y="18" width="24" height="24" rx="2" fill="white"/>
+                <rect x="104" y="24" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="12" y="92" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="18" y="98" width="24" height="24" rx="2" fill="white"/>
+                <rect x="24" y="104" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="72" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="104" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="120" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="52" y="52" width="16" height="16" rx="4" fill="#7c3aed"/>
+                <text x="60" y="64" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">D</text>
+              </svg>
+            </div>
+          </div>
+          <p className="activation-qr-text">Scan to activate</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Player license helper ── */
+function getPlayerLicense() {
+  // In production: fetched from admin panel API during device auth
+  // Returns: { type: 'unlimited' | 'yearly' | 'trial', expiresAt: null | '2027-03-15', trialDaysLeft: 0 }
+  // For demo: simulate trial with 15 days left
+  return { type: 'trial', expiresAt: null, trialDaysLeft: 15 };
+}
+
+function getPlayerStatusText(license) {
+  if (license.type === 'unlimited') return 'Unlimited';
+  if (license.type === 'yearly') return `1 Year (expires ${license.expiresAt})`;
+  if (license.type === 'trial') {
+    if (license.trialDaysLeft <= 0) return 'Trial Ended';
+    return `Free Trial: ${license.trialDaysLeft} days left`;
+  }
+  return 'Unknown';
+}
+
 /* ── MAIN APP ── */
 export default function App() {
   const [credentials, setCredentials] = useState(null);
   const [screen, setScreen] = useState('home');
+  const [playerLicense] = useState(() => getPlayerLicense());
+
+  // Check if trial has expired
+  const isTrialExpired = playerLicense.type === 'trial' && playerLicense.trialDaysLeft <= 0;
 
   if (!credentials) {
     return <ActivationScreen onActivated={(creds) => { setCredentials(creds); setScreen('home'); }} />;
+  }
+
+  // If trial expired, show the expired screen (block all content)
+  if (isTrialExpired) {
+    return <TrialExpiredScreen />;
   }
 
   const handleNavigate = (section) => {
@@ -837,6 +937,6 @@ export default function App() {
     case 'settings':
       return <SettingsScreen onBack={() => setScreen('home')} />;
     default:
-      return <HomeScreen onNavigate={handleNavigate} credentials={credentials} />;
+      return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} />;
   }
 }

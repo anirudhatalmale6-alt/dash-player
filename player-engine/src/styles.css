@@ -662,6 +662,18 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .settings-about-version { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 .settings-about-links { margin-top: 20px; font-size: 13px; color: var(--purple); }
 
+/* ══════ TRIAL EXPIRED SCREEN ══════ */
+.trial-expired-icon {
+  font-size: 56px; text-align: center; margin-bottom: 12px;
+}
+.trial-expired-title {
+  font-size: 22px; font-weight: 800; color: #ef4444; text-align: center; margin-bottom: 10px;
+}
+.trial-expired-desc {
+  font-size: 14px; color: var(--text-sub); text-align: center;
+  line-height: 1.6; margin-bottom: 20px;
+}
+
 /* Account Info Grid */
 .settings-account-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;
