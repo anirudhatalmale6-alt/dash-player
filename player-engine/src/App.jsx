@@ -263,10 +263,48 @@ function LiveTVScreen({ onBack }) {
       </div>
 
       <div className="section-body">
-        {/* Sidebar */}
+        {/* Sidebar with Branding */}
         <div className="section-sidebar">
-          <div className="sidebar-search">
-            <input placeholder="Search channels..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          <div className="sidebar-brand">
+            <div className="sidebar-brand-logo">D</div>
+            <div className="sidebar-brand-name">Dash Player</div>
+            <div className="sidebar-brand-qr">
+              <svg width="120" height="120" viewBox="0 0 140 140">
+                <rect width="140" height="140" rx="12" fill="white"/>
+                <rect x="12" y="12" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="18" y="18" width="24" height="24" rx="2" fill="white"/>
+                <rect x="24" y="24" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="92" y="12" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="98" y="18" width="24" height="24" rx="2" fill="white"/>
+                <rect x="104" y="24" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="12" y="92" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="18" y="98" width="24" height="24" rx="2" fill="white"/>
+                <rect x="24" y="104" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="12" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="12" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="28" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="12" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="28" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="72" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="120" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="104" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="104" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="104" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="120" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="120" y="104" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="120" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="104" y="120" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="52" y="52" width="16" height="16" rx="4" fill="#7c3aed"/>
+                <text x="60" y="64" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">D</text>
+              </svg>
+            </div>
+            <p className="sidebar-brand-qr-text">Scan QR to add playlist</p>
           </div>
           <div className="sidebar-categories">
             {categories.map(cat => (
