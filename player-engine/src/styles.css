@@ -28,6 +28,105 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.15); border-radius: 4px; }
 
+/* ══════ ACTIVATION SCREEN ══════ */
+.activation-screen {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #f8f7ff 0%, #f0ecff 40%, #ece7ff 70%, #f5f3ff 100%);
+  position: relative;
+}
+.activation-screen::before {
+  content: ''; position: absolute; top: -80px; right: -40px;
+  width: 300px; height: 300px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,58,237,0.06) 0%, transparent 70%);
+}
+.activation-container {
+  display: flex; gap: 0; max-width: 860px; width: 90%;
+  background: white; border-radius: 28px;
+  box-shadow: 0 12px 48px rgba(124,58,237,0.1), 0 2px 8px rgba(0,0,0,0.04);
+  overflow: hidden; border: 1px solid rgba(124,58,237,0.06);
+}
+.activation-info {
+  flex: 1; padding: 40px 44px;
+  display: flex; align-items: center; justify-content: center;
+}
+.activation-info-inner { width: 100%; }
+.activation-instruction {
+  font-size: 15px; color: var(--text); text-align: center;
+  line-height: 1.6; margin-bottom: 20px;
+}
+.activation-url {
+  display: block; text-align: center;
+  font-size: 15px; color: var(--purple); font-weight: 600;
+  margin-bottom: 28px; text-decoration: none;
+}
+.activation-url:hover { text-decoration: underline; }
+.activation-field { margin-bottom: 20px; }
+.activation-label {
+  display: block; text-align: center;
+  font-size: 14px; font-weight: 600; color: var(--text);
+  margin-bottom: 8px;
+}
+.activation-value-row {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.activation-value {
+  font-size: 20px; font-weight: 700; color: var(--purple);
+  letter-spacing: 1.5px; font-family: 'Courier New', monospace;
+}
+.activation-copy {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: rgba(124,58,237,0.06); border: 1px solid rgba(124,58,237,0.1);
+  color: var(--purple); cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.activation-copy:hover { background: var(--purple); color: white; }
+.activation-buttons {
+  display: flex; gap: 14px; justify-content: center; margin-top: 32px;
+}
+.activation-btn {
+  padding: 14px 40px; border-radius: 14px; cursor: pointer;
+  font-size: 14px; font-weight: 700; letter-spacing: 1px;
+  transition: all 0.25s; border: none;
+}
+.activation-btn-reload {
+  background: linear-gradient(135deg, var(--purple), var(--purple-dark));
+  color: white; box-shadow: 0 4px 16px rgba(124,58,237,0.25);
+}
+.activation-btn-reload:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(124,58,237,0.3); }
+.activation-btn-reload:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+.activation-btn-exit {
+  background: rgba(0,0,0,0.04); color: var(--text-sub);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.activation-btn-exit:hover { background: rgba(0,0,0,0.08); }
+
+.activation-brand {
+  width: 280px; padding: 40px 32px;
+  background: linear-gradient(160deg, #f5f3ff, #ede9fe, #e8deff);
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 16px;
+}
+.activation-logo {
+  width: 64px; height: 64px;
+  background: linear-gradient(135deg, var(--purple), var(--purple-deeper));
+  border-radius: 16px; display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 800; color: white;
+  box-shadow: 0 6px 20px rgba(124,58,237,0.25);
+}
+.activation-app-name {
+  font-size: 22px; font-weight: 800; color: var(--purple-deeper);
+}
+.activation-qr { margin: 8px 0; }
+.activation-qr-placeholder {
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.activation-qr-text {
+  font-size: 12px; color: var(--text-sub); text-align: center;
+}
+
 /* ══════ LOGIN ══════ */
 .login-screen {
   width: 100%; height: 100%;

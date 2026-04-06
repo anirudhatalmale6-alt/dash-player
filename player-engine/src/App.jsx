@@ -1,41 +1,136 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { mockData } from './services/xtreamApi';
 import './styles.css';
 
-/* ── LOGIN SCREEN ── */
-function LoginScreen({ onLogin }) {
-  const [url, setUrl] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+/* ── Generate a persistent device identity ── */
+function getDeviceIdentity() {
+  let stored = localStorage.getItem('dash_device');
+  if (stored) return JSON.parse(stored);
+  // Generate MAC-like address and device key
+  const hex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
+  const mac = `${hex()}:${hex()}:${hex()}:${hex()}:${hex()}:${hex()}`;
+  const key = Array.from({ length: 16 }, () => '0123456789ABCDEF'[Math.floor(Math.random() * 16)]).join('');
+  const device = { mac, key };
+  localStorage.setItem('dash_device', JSON.stringify(device));
+  return device;
+}
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setTimeout(() => {
-      onLogin({ url: url || 'http://demo.server', username: username || 'demo', password: password || 'demo' });
-      setLoading(false);
-    }, 500);
+/* ── ACTIVATION SCREEN (First screen after install) ── */
+function ActivationScreen({ onActivated }) {
+  const [device] = useState(() => getDeviceIdentity());
+  const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const panelUrl = 'https://panel.dashplayer.tv';
+
+  const copyToClipboard = (text, field) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(field);
+    setTimeout(() => setCopied(null), 2000);
   };
 
+  const handleReload = () => {
+    setChecking(true);
+    // In production: calls admin panel API to check if device is activated
+    // POST /api/player/device/auth { mac_address, device_key }
+    // For demo: simulate activation after 1s
+    setTimeout(() => {
+      setChecking(false);
+      onActivated({ url: 'http://demo', username: 'demo', password: 'demo' });
+    }, 1500);
+  };
+
+  // Generate QR code as SVG (simple version - in production use a proper QR library)
+  const qrSize = 140;
+
   return (
-    <div className="login-screen">
-      <div className="login-box">
-        <div className="login-logo">D</div>
-        <div className="login-title">Dash Player</div>
-        <div className="login-subtitle">Enter your playlist credentials</div>
-        <form onSubmit={handleSubmit}>
-          <input className="login-input" placeholder="Server URL" value={url} onChange={e => setUrl(e.target.value)} />
-          <input className="login-input" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
-          <input className="login-input" placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-          <button className="login-btn" type="submit" disabled={loading}>
-            {loading ? 'Connecting...' : 'Connect'}
-          </button>
-        </form>
-        <div style={{ marginTop: 16 }}>
-          <button onClick={() => onLogin({ url: 'http://demo', username: 'demo', password: 'demo' })} className="demo-btn">
-            Launch Demo Mode
-          </button>
+    <div className="activation-screen">
+      <div className="activation-container">
+        {/* Left - Device Info */}
+        <div className="activation-info">
+          <div className="activation-info-inner">
+            <p className="activation-instruction">
+              To add/manage playlists, use the following<br />values on the admin panel:
+            </p>
+
+            <a href={panelUrl} className="activation-url">{panelUrl}</a>
+
+            <div className="activation-field">
+              <label className="activation-label">Mac Address</label>
+              <div className="activation-value-row">
+                <span className="activation-value">{device.mac}</span>
+                <button className="activation-copy" onClick={() => copyToClipboard(device.mac, 'mac')}>
+                  {copied === 'mac' ? '✓' : '⧉'}
+                </button>
+              </div>
+            </div>
+
+            <div className="activation-field">
+              <label className="activation-label">Device Key</label>
+              <div className="activation-value-row">
+                <span className="activation-value">{device.key}</span>
+                <button className="activation-copy" onClick={() => copyToClipboard(device.key, 'key')}>
+                  {copied === 'key' ? '✓' : '⧉'}
+                </button>
+              </div>
+            </div>
+
+            <div className="activation-buttons">
+              <button className="activation-btn activation-btn-reload" onClick={handleReload} disabled={checking}>
+                {checking ? 'Checking...' : 'RELOAD'}
+              </button>
+              <button className="activation-btn activation-btn-exit">
+                EXIT
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right - Branding & QR */}
+        <div className="activation-brand">
+          <div className="activation-logo">D</div>
+          <div className="activation-app-name">Dash Player</div>
+          <div className="activation-qr">
+            <div className="activation-qr-placeholder">
+              <svg width={qrSize} height={qrSize} viewBox="0 0 140 140">
+                <rect width="140" height="140" rx="12" fill="white"/>
+                {/* Simplified QR pattern */}
+                <rect x="12" y="12" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="18" y="18" width="24" height="24" rx="2" fill="white"/>
+                <rect x="24" y="24" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="92" y="12" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="98" y="18" width="24" height="24" rx="2" fill="white"/>
+                <rect x="104" y="24" width="12" height="12" rx="1" fill="#7c3aed"/>
+                <rect x="12" y="92" width="36" height="36" rx="4" fill="#7c3aed"/>
+                <rect x="18" y="98" width="24" height="24" rx="2" fill="white"/>
+                <rect x="24" y="104" width="12" height="12" rx="1" fill="#7c3aed"/>
+                {/* Center data pattern */}
+                <rect x="56" y="12" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="12" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="28" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="12" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="28" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="72" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="120" y="56" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="56" y="104" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="88" y="104" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="104" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="120" y="88" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="120" y="104" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="72" y="120" width="8" height="8" rx="1" fill="#7c3aed"/>
+                <rect x="104" y="120" width="8" height="8" rx="1" fill="#7c3aed"/>
+                {/* Center logo */}
+                <rect x="52" y="52" width="16" height="16" rx="4" fill="#7c3aed"/>
+                <text x="60" y="64" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">D</text>
+              </svg>
+            </div>
+          </div>
+          <p className="activation-qr-text">Scan QR to add playlist</p>
         </div>
       </div>
     </div>
@@ -421,7 +516,7 @@ export default function App() {
   const [screen, setScreen] = useState('home'); // home, live, vod, series
 
   if (!credentials) {
-    return <LoginScreen onLogin={(creds) => { setCredentials(creds); setScreen('home'); }} />;
+    return <ActivationScreen onActivated={(creds) => { setCredentials(creds); setScreen('home'); }} />;
   }
 
   const handleNavigate = (section) => {
