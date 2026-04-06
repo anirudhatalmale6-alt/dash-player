@@ -86,6 +86,10 @@ function HomeScreen({ onNavigate, credentials }) {
             <div className="home-card-icon">&#127916;</div>
             <div className="home-card-label">Series</div>
           </div>
+          <div className="home-card home-card-radio" onClick={() => onNavigate('radio')}>
+            <div className="home-card-icon">&#127911;</div>
+            <div className="home-card-label">Radio</div>
+          </div>
         </div>
 
         {/* Secondary Cards */}
@@ -315,6 +319,102 @@ function MediaScreen({ type, onBack }) {
   );
 }
 
+/* ── RADIO SCREEN ── */
+function RadioScreen({ onBack }) {
+  const radioCategories = [
+    { id: 'all', name: 'All Stations' },
+    { id: 'pop', name: 'Pop' },
+    { id: 'rock', name: 'Rock' },
+    { id: 'jazz', name: 'Jazz' },
+    { id: 'classical', name: 'Classical' },
+    { id: 'hiphop', name: 'Hip Hop' },
+    { id: 'electronic', name: 'Electronic' },
+    { id: 'country', name: 'Country' },
+    { id: 'news', name: 'News & Talk' },
+  ];
+  const radioStations = [
+    { id: 1, name: 'BBC Radio 1', cat: 'pop', genre: 'Pop & Chart' },
+    { id: 2, name: 'Capital FM', cat: 'pop', genre: 'Pop Hits' },
+    { id: 3, name: 'Kiss FM', cat: 'pop', genre: 'Dance & Pop' },
+    { id: 4, name: 'Heart Radio', cat: 'pop', genre: 'Feel Good Hits' },
+    { id: 5, name: 'Radio X', cat: 'rock', genre: 'Alternative Rock' },
+    { id: 6, name: 'Planet Rock', cat: 'rock', genre: 'Classic Rock' },
+    { id: 7, name: 'Kerrang Radio', cat: 'rock', genre: 'Rock & Metal' },
+    { id: 8, name: 'Absolute Rock', cat: 'rock', genre: 'Rock Hits' },
+    { id: 9, name: 'Jazz FM', cat: 'jazz', genre: 'Smooth Jazz' },
+    { id: 10, name: 'Smooth Jazz 24/7', cat: 'jazz', genre: 'Jazz Lounge' },
+    { id: 11, name: 'Blue Note Radio', cat: 'jazz', genre: 'Jazz Classics' },
+    { id: 12, name: 'Classic FM', cat: 'classical', genre: 'Classical Music' },
+    { id: 13, name: 'BBC Radio 3', cat: 'classical', genre: 'Classical & Arts' },
+    { id: 14, name: 'Scala Radio', cat: 'classical', genre: 'Modern Classical' },
+    { id: 15, name: 'Power 105.1', cat: 'hiphop', genre: 'Hip Hop & R&B' },
+    { id: 16, name: 'Hot 97', cat: 'hiphop', genre: 'Hip Hop Hits' },
+    { id: 17, name: 'Rinse FM', cat: 'electronic', genre: 'Electronic & Dance' },
+    { id: 18, name: 'Ministry of Sound', cat: 'electronic', genre: 'House & EDM' },
+    { id: 19, name: 'BBC Radio 4', cat: 'news', genre: 'News & Documentaries' },
+    { id: 20, name: 'LBC Radio', cat: 'news', genre: 'Talk & Debate' },
+    { id: 21, name: 'NPR Radio', cat: 'news', genre: 'Public Radio' },
+    { id: 22, name: 'Country Hits Radio', cat: 'country', genre: 'Country Music' },
+    { id: 23, name: 'The Highway', cat: 'country', genre: 'New Country' },
+    { id: 24, name: 'Willie\'s Roadhouse', cat: 'country', genre: 'Classic Country' },
+  ];
+
+  const [selectedCat, setSelectedCat] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [playing, setPlaying] = useState(null);
+
+  const filtered = radioStations.filter(s => {
+    const matchCat = selectedCat === 'all' || s.cat === selectedCat;
+    const matchSearch = !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  return (
+    <div className="section-screen">
+      <div className="section-header">
+        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <h1 className="section-title">Radio</h1>
+        <div className="section-header-right">
+          <span className="channel-count">{filtered.length} stations</span>
+        </div>
+      </div>
+      <div className="section-body">
+        <div className="section-sidebar">
+          <div className="sidebar-search">
+            <input placeholder="Search stations..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          </div>
+          <div className="sidebar-categories">
+            {radioCategories.map(cat => (
+              <div key={cat.id} className={`sidebar-cat-item ${selectedCat === cat.id ? 'active' : ''}`} onClick={() => setSelectedCat(cat.id)}>
+                <span>{cat.name}</span>
+                <span className="sidebar-cat-count">
+                  {cat.id === 'all' ? radioStations.length : radioStations.filter(s => s.cat === cat.id).length}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="radio-grid">
+          {filtered.map(station => (
+            <div key={station.id} className={`radio-card ${playing?.id === station.id ? 'playing' : ''}`} onClick={() => setPlaying(station)}>
+              <div className="radio-icon">&#127911;</div>
+              <div className="radio-info">
+                <div className="radio-name">{station.name}</div>
+                <div className="radio-genre">{station.genre}</div>
+              </div>
+              {playing?.id === station.id && <div className="radio-playing-indicator">
+                <span className="radio-bar"></span>
+                <span className="radio-bar"></span>
+                <span className="radio-bar"></span>
+              </div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── MAIN APP ── */
 export default function App() {
   const [credentials, setCredentials] = useState(null);
@@ -325,7 +425,7 @@ export default function App() {
   }
 
   const handleNavigate = (section) => {
-    if (['live', 'vod', 'series'].includes(section)) {
+    if (['live', 'vod', 'series', 'radio'].includes(section)) {
       setScreen(section);
     }
   };
@@ -337,6 +437,8 @@ export default function App() {
       return <MediaScreen type="vod" onBack={() => setScreen('home')} />;
     case 'series':
       return <MediaScreen type="series" onBack={() => setScreen('home')} />;
+    case 'radio':
+      return <RadioScreen onBack={() => setScreen('home')} />;
     default:
       return <HomeScreen onNavigate={handleNavigate} credentials={credentials} />;
   }
