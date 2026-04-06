@@ -212,7 +212,7 @@ function HomeScreen({ onNavigate, credentials }) {
         <div className="home-playlist-info">
           MAC: <strong>{device.mac}</strong>
         </div>
-        <div className="home-version">V: 1.0.0</div>
+        <div className="home-version">Player Activated: <strong>Unlimited</strong> &nbsp;|&nbsp; V: 1.0.0</div>
       </div>
     </div>
   );
