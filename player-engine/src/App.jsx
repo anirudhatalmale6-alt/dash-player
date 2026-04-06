@@ -212,7 +212,7 @@ function HomeScreen({ onNavigate, credentials, playerLicense }) {
         <div className="home-playlist-info">
           MAC: <strong>{device.mac}</strong>
         </div>
-        <div className="home-version">Player Activated: <strong>{getPlayerStatusText(playerLicense)}</strong></div>
+        <div className="home-version">{playerLicense.type === 'trial' ? 'Player Trial: ' : 'Player Activated: '}<strong>{getPlayerStatusText(playerLicense)}</strong></div>
       </div>
     </div>
   );
@@ -893,10 +893,10 @@ function getPlayerLicense() {
 
 function getPlayerStatusText(license) {
   if (license.type === 'unlimited') return 'Unlimited';
-  if (license.type === 'yearly') return `1 Year (expires ${license.expiresAt})`;
+  if (license.type === 'yearly') return license.expiresAt;
   if (license.type === 'trial') {
-    if (license.trialDaysLeft <= 0) return 'Trial Ended';
-    return `Free Trial: ${license.trialDaysLeft} days left`;
+    if (license.trialDaysLeft <= 0) return 'Expired';
+    return `${license.trialDaysLeft} days left`;
   }
   return 'Unknown';
 }
