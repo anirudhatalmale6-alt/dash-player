@@ -318,20 +318,24 @@ function LiveTVScreen({ onBack }) {
                 <div className="epg-live-badge">LIVE</div>
               </div>
               <div className="epg-programs">
-                {epgData.map(prog => (
-                  <div key={prog.id} className={`epg-prog ${isCurrentProgram(prog) ? 'current' : ''} ${isPastProgram(prog) ? 'past' : ''}`}>
-                    <div className="epg-prog-time">{formatTime(prog.start)}</div>
-                    <div className="epg-prog-details">
-                      <div className="epg-prog-title">{prog.title}</div>
-                      <div className="epg-prog-desc">{prog.description}</div>
-                      {isCurrentProgram(prog) && (
-                        <div className="epg-prog-progress">
-                          <div className="epg-prog-bar" style={{ width: `${getProgress(prog)}%` }} />
-                        </div>
-                      )}
+                {epgData.map((prog, idx) => {
+                  const shades = ['epg-shade-white', 'epg-shade-light', 'epg-shade-purple'];
+                  const shade = shades[(prog.id * 7 + idx * 3) % shades.length];
+                  return (
+                    <div key={prog.id} className={`epg-prog ${shade} ${isCurrentProgram(prog) ? 'current' : ''} ${isPastProgram(prog) ? 'past' : ''}`}>
+                      <div className="epg-prog-time">{formatTime(prog.start)}</div>
+                      <div className="epg-prog-details">
+                        <div className="epg-prog-title">{prog.title}</div>
+                        <div className="epg-prog-desc">{prog.description}</div>
+                        {isCurrentProgram(prog) && (
+                          <div className="epg-prog-progress">
+                            <div className="epg-prog-bar" style={{ width: `${getProgress(prog)}%` }} />
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           ) : (
