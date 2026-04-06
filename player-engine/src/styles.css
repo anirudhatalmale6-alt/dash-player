@@ -417,10 +417,13 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .epg-prog { background: white; }
 .epg-prog.epg-purple { background: #f0ecff; }
 .epg-prog:hover {
-  background: rgba(124,58,237,0.08) !important;
-  box-shadow: 0 2px 12px rgba(124,58,237,0.12);
+  background: linear-gradient(135deg, var(--purple), var(--purple-dark)) !important;
+  box-shadow: 0 4px 16px rgba(124,58,237,0.25);
   transform: scale(1.005);
 }
+.epg-prog:hover .epg-prog-time,
+.epg-prog:hover .epg-prog-title,
+.epg-prog:hover .epg-prog-desc { color: white !important; }
 .epg-prog.current { background: white !important; border-left: 3px solid var(--purple); box-shadow: 0 1px 6px rgba(0,0,0,0.04); }
 .epg-prog.current:hover { background: rgba(124,58,237,0.06) !important; }
 .epg-prog.past { opacity: 0.4; }
