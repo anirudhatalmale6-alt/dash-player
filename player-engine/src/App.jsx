@@ -510,17 +510,282 @@ function RadioScreen({ onBack }) {
   );
 }
 
+/* ── SETTINGS SCREEN ── */
+function SettingsScreen({ onBack }) {
+  const [device, setDevice] = useState(() => getDeviceIdentity());
+  const [pinEnabled, setPinEnabled] = useState(() => localStorage.getItem('dash_pin_enabled') === 'true');
+  const [pin, setPin] = useState(() => localStorage.getItem('dash_pin') || '');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinMsg, setPinMsg] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [activeTab, setActiveTab] = useState('parental');
+
+  const handleSetPin = () => {
+    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+      setPinMsg('PIN must be exactly 4 digits');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setPinMsg('PINs do not match');
+      return;
+    }
+    localStorage.setItem('dash_pin', newPin);
+    localStorage.setItem('dash_pin_enabled', 'true');
+    setPin(newPin);
+    setPinEnabled(true);
+    setNewPin('');
+    setConfirmPin('');
+    setPinMsg('PIN set successfully!');
+    setTimeout(() => setPinMsg(''), 3000);
+  };
+
+  const handleDisablePin = () => {
+    localStorage.removeItem('dash_pin');
+    localStorage.setItem('dash_pin_enabled', 'false');
+    setPin('');
+    setPinEnabled(false);
+    setPinMsg('PIN protection disabled');
+    setTimeout(() => setPinMsg(''), 3000);
+  };
+
+  const handleResetDeviceKey = () => {
+    const hex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
+    const newKey = Array.from({ length: 16 }, () => '0123456789ABCDEF'[Math.floor(Math.random() * 16)]).join('');
+    const newDevice = { ...device, key: newKey };
+    localStorage.setItem('dash_device', JSON.stringify(newDevice));
+    setDevice(newDevice);
+    setShowResetConfirm(false);
+    setResetMsg('Device Key has been reset. You will need to re-activate this device.');
+    setTimeout(() => setResetMsg(''), 5000);
+  };
+
+  const tabs = [
+    { id: 'parental', label: 'Parental Control', icon: '🔒' },
+    { id: 'device', label: 'Device Info', icon: '📱' },
+    { id: 'player', label: 'Player', icon: '▶' },
+    { id: 'about', label: 'About', icon: 'ℹ' },
+  ];
+
+  return (
+    <div className="section-screen">
+      <div className="section-header">
+        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <h1 className="section-title">Settings</h1>
+      </div>
+      <div className="section-body">
+        {/* Settings Sidebar */}
+        <div className="section-sidebar">
+          <div className="sidebar-categories" style={{ paddingTop: 12 }}>
+            {tabs.map(tab => (
+              <div
+                key={tab.id}
+                className={`sidebar-cat-item ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                <span>{tab.icon} {tab.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Settings Content */}
+        <div className="settings-content">
+          {activeTab === 'parental' && (
+            <div className="settings-panel">
+              <div className="settings-card">
+                <h3 className="settings-card-title">Adult Content PIN Lock</h3>
+                <p className="settings-card-desc">
+                  Set a 4-digit PIN to protect adult channels. Users will need to enter this PIN to view locked channels.
+                </p>
+
+                <div className="settings-status">
+                  <span>Status:</span>
+                  <span className={`settings-badge ${pinEnabled ? 'active' : 'inactive'}`}>
+                    {pinEnabled ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                </div>
+
+                {pinEnabled ? (
+                  <div className="settings-pin-section">
+                    <p className="settings-pin-info">PIN is currently set. You can change it or disable it.</p>
+                    <div className="settings-pin-row">
+                      <input
+                        type="password"
+                        maxLength={4}
+                        placeholder="New PIN"
+                        value={newPin}
+                        onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
+                        className="settings-pin-input"
+                      />
+                      <input
+                        type="password"
+                        maxLength={4}
+                        placeholder="Confirm"
+                        value={confirmPin}
+                        onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                        className="settings-pin-input"
+                      />
+                      <button className="settings-btn settings-btn-primary" onClick={handleSetPin}>Change PIN</button>
+                    </div>
+                    <button className="settings-btn settings-btn-danger" onClick={handleDisablePin}>Disable PIN</button>
+                  </div>
+                ) : (
+                  <div className="settings-pin-section">
+                    <div className="settings-pin-row">
+                      <input
+                        type="password"
+                        maxLength={4}
+                        placeholder="Enter 4-digit PIN"
+                        value={newPin}
+                        onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
+                        className="settings-pin-input"
+                      />
+                      <input
+                        type="password"
+                        maxLength={4}
+                        placeholder="Confirm PIN"
+                        value={confirmPin}
+                        onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                        className="settings-pin-input"
+                      />
+                      <button className="settings-btn settings-btn-primary" onClick={handleSetPin}>Set PIN</button>
+                    </div>
+                  </div>
+                )}
+
+                {pinMsg && <p className={`settings-msg ${pinMsg.includes('successfully') ? 'success' : pinMsg.includes('disabled') ? 'info' : 'error'}`}>{pinMsg}</p>}
+              </div>
+
+              {pinEnabled && (
+                <div className="settings-card">
+                  <h3 className="settings-card-title">Locked Channels</h3>
+                  <p className="settings-card-desc">
+                    Channels marked as adult content will require PIN entry before viewing.
+                    This is managed from the Admin Panel under device settings.
+                  </p>
+                  <div className="settings-locked-info">
+                    <span className="settings-lock-icon">🔒</span>
+                    <span>Channel locking is configured from the Admin Panel per playlist/bouquet.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'device' && (
+            <div className="settings-panel">
+              <div className="settings-card">
+                <h3 className="settings-card-title">Device Information</h3>
+                <div className="settings-device-info">
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">MAC Address</span>
+                    <span className="settings-device-value">{device.mac}</span>
+                  </div>
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">Device Key</span>
+                    <span className="settings-device-value">{device.key}</span>
+                  </div>
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">App Version</span>
+                    <span className="settings-device-value">1.0.0</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-card">
+                <h3 className="settings-card-title">Reset Device Key</h3>
+                <p className="settings-card-desc">
+                  Generate a new device key. Warning: this will deactivate the current device and require re-activation from the Admin Panel.
+                </p>
+                {!showResetConfirm ? (
+                  <button className="settings-btn settings-btn-danger" onClick={() => setShowResetConfirm(true)}>
+                    Reset Device Key
+                  </button>
+                ) : (
+                  <div className="settings-confirm-box">
+                    <p className="settings-confirm-text">Are you sure? This will require re-activation.</p>
+                    <div className="settings-confirm-btns">
+                      <button className="settings-btn settings-btn-danger" onClick={handleResetDeviceKey}>Yes, Reset</button>
+                      <button className="settings-btn settings-btn-secondary" onClick={() => setShowResetConfirm(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                {resetMsg && <p className="settings-msg info">{resetMsg}</p>}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'player' && (
+            <div className="settings-panel">
+              <div className="settings-card">
+                <h3 className="settings-card-title">Player Settings</h3>
+                <div className="settings-option">
+                  <div className="settings-option-info">
+                    <span className="settings-option-label">Auto-play next channel</span>
+                    <span className="settings-option-desc">Automatically switch to next channel when current ends</span>
+                  </div>
+                  <div className="settings-toggle active"><div className="settings-toggle-dot" /></div>
+                </div>
+                <div className="settings-option">
+                  <div className="settings-option-info">
+                    <span className="settings-option-label">Hardware acceleration</span>
+                    <span className="settings-option-desc">Use hardware decoding for better performance</span>
+                  </div>
+                  <div className="settings-toggle active"><div className="settings-toggle-dot" /></div>
+                </div>
+                <div className="settings-option">
+                  <div className="settings-option-info">
+                    <span className="settings-option-label">EPG auto-update</span>
+                    <span className="settings-option-desc">Refresh TV Guide data every 6 hours</span>
+                  </div>
+                  <div className="settings-toggle active"><div className="settings-toggle-dot" /></div>
+                </div>
+                <div className="settings-option">
+                  <div className="settings-option-info">
+                    <span className="settings-option-label">Buffer size</span>
+                    <span className="settings-option-desc">Stream buffer duration</span>
+                  </div>
+                  <span className="settings-option-value">3 seconds</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'about' && (
+            <div className="settings-panel">
+              <div className="settings-card" style={{ textAlign: 'center' }}>
+                <div className="settings-about-logo">D</div>
+                <h2 className="settings-about-name">Dash Player</h2>
+                <p className="settings-about-version">Version 1.0.0</p>
+                <p className="settings-card-desc" style={{ marginTop: 16 }}>
+                  Multi-platform IPTV player with Xtream Codes support.
+                  Supports Live TV, Movies, Series, Radio, Catch Up, and EPG.
+                </p>
+                <div className="settings-about-links">
+                  <span>Support: panel.dashplayer.tv</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── MAIN APP ── */
 export default function App() {
   const [credentials, setCredentials] = useState(null);
-  const [screen, setScreen] = useState('home'); // home, live, vod, series
+  const [screen, setScreen] = useState('home');
 
   if (!credentials) {
     return <ActivationScreen onActivated={(creds) => { setCredentials(creds); setScreen('home'); }} />;
   }
 
   const handleNavigate = (section) => {
-    if (['live', 'vod', 'series', 'radio'].includes(section)) {
+    if (['live', 'vod', 'series', 'radio', 'settings'].includes(section)) {
       setScreen(section);
     }
   };
@@ -534,6 +799,8 @@ export default function App() {
       return <MediaScreen type="series" onBack={() => setScreen('home')} />;
     case 'radio':
       return <RadioScreen onBack={() => setScreen('home')} />;
+    case 'settings':
+      return <SettingsScreen onBack={() => setScreen('home')} />;
     default:
       return <HomeScreen onNavigate={handleNavigate} credentials={credentials} />;
   }
