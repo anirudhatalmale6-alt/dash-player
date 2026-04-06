@@ -140,6 +140,7 @@ function ActivationScreen({ onActivated }) {
 /* ── HOME SCREEN ── */
 function HomeScreen({ onNavigate, credentials }) {
   const [time, setTime] = useState(new Date());
+  const [device] = useState(() => getDeviceIdentity());
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000);
@@ -161,8 +162,6 @@ function HomeScreen({ onNavigate, credentials }) {
           <div className="home-clock-date">{formatDate(time)}</div>
         </div>
         <div className="home-topbar-actions">
-          <button className="home-icon-btn" title="Search">&#128269;</button>
-          <button className="home-icon-btn" title="Settings">&#9881;</button>
         </div>
       </div>
 
@@ -211,7 +210,7 @@ function HomeScreen({ onNavigate, credentials }) {
       {/* Bottom Bar */}
       <div className="home-bottombar">
         <div className="home-playlist-info">
-          Current Playlist: <strong>{credentials.username}</strong> &nbsp;|&nbsp; Server: <strong>{credentials.url}</strong>
+          MAC: <strong>{device.mac}</strong>
         </div>
         <div className="home-version">V: 1.0.0</div>
       </div>
