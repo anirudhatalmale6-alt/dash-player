@@ -414,11 +414,15 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   padding: 12px 14px; border-radius: 12px; margin-bottom: 4px;
   display: flex; gap: 14px; cursor: pointer; transition: all 0.15s;
 }
-.epg-shade-white { background: white; }
-.epg-shade-light { background: #f7f5fb; }
-.epg-shade-purple { background: #f0ecff; }
-.epg-prog:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.04); filter: brightness(0.98); }
+.epg-prog { background: white; }
+.epg-prog.epg-purple { background: #f0ecff; }
+.epg-prog:hover {
+  background: rgba(124,58,237,0.08) !important;
+  box-shadow: 0 2px 12px rgba(124,58,237,0.12);
+  transform: scale(1.005);
+}
 .epg-prog.current { background: white !important; border-left: 3px solid var(--purple); box-shadow: 0 1px 6px rgba(0,0,0,0.04); }
+.epg-prog.current:hover { background: rgba(124,58,237,0.06) !important; }
 .epg-prog.past { opacity: 0.4; }
 .epg-prog-time { font-size: 12px; color: var(--purple); font-weight: 500; min-width: 60px; flex-shrink: 0; }
 .epg-prog-details { flex: 1; }
