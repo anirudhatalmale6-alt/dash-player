@@ -509,6 +509,19 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .media-poster-letter {
   font-size: 36px; color: var(--purple-lighter); font-weight: 700;
 }
+.media-play-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.4); display: flex;
+  align-items: center; justify-content: center;
+  font-size: 36px; color: white; opacity: 0;
+  transition: opacity 0.25s; cursor: pointer;
+}
+.media-card:hover .media-play-overlay { opacity: 1; }
+.ep-play {
+  color: var(--purple); font-size: 14px; flex-shrink: 0;
+  opacity: 0.5; transition: opacity 0.2s;
+}
+.series-episode:hover .ep-play { opacity: 1; }
 .media-info { padding: 10px 12px; }
 .media-title {
   font-size: 13px; font-weight: 500; color: var(--text);

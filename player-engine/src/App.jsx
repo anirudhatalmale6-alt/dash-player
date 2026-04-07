@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { mockData } from './services/xtreamApi';
 import axios from 'axios';
-import Hls from 'hls.js';
+import mpegts from 'mpegts.js';
 import './styles.css';
 
 /* ── Xtream API helper ── */
@@ -33,6 +33,7 @@ function createXtreamApi(url, username, password) {
     getEPG: (streamId) => req('get_short_epg', { stream_id: streamId }),
     getLiveUrl: (streamId, ext = 'ts') => `${baseUrl}/live/${username}/${password}/${streamId}.${ext}`,
     getVodUrl: (streamId, ext = 'mp4') => `${baseUrl}/movie/${username}/${password}/${streamId}.${ext}`,
+    getSeriesUrl: (streamId, ext = 'mp4') => `${baseUrl}/series/${username}/${password}/${streamId}.${ext}`,
   };
 }
 
@@ -353,7 +354,7 @@ function b64decode(str) {
 /* ── VIDEO PLAYER COMPONENT ── */
 function VideoPlayer({ url, onClose, title, inline }) {
   const videoRef = useRef(null);
-  const hlsRef = useRef(null);
+  const playerRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -363,53 +364,54 @@ function VideoPlayer({ url, onClose, title, inline }) {
     setLoading(true);
     const video = videoRef.current;
 
-    // Build URLs to try: m3u8 first, then ts, then original
-    const hlsUrl = url.replace(/\.\w+$/, '.m3u8');
-    const tsUrl = url.replace(/\.\w+$/, '.ts');
+    const isLive = url.includes('/live/');
+    const isMpegTs = url.endsWith('.ts') || isLive;
 
-    const tryDirectUrl = (directUrl) => {
-      video.src = directUrl;
-      video.addEventListener('loadedmetadata', () => setLoading(false), { once: true });
-      video.addEventListener('canplay', () => setLoading(false), { once: true });
-      video.addEventListener('error', () => setError('Stream unavailable'), { once: true });
-      video.play().catch(() => {});
-    };
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
+    // Use mpegts.js for MPEG-TS streams (live channels)
+    if (isMpegTs && mpegts.isSupported()) {
+      const tsUrl = url.replace(/\.\w+$/, '.ts');
+      const player = mpegts.createPlayer({
+        type: 'mpegts',
+        isLive: isLive,
+        url: tsUrl,
+      }, {
         enableWorker: true,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        xhrSetup: (xhr) => {
-          xhr.timeout = 10000;
-        },
+        liveBufferLatencyChasing: true,
+        liveBufferLatencyMaxLatency: 3,
+        liveBufferLatencyMinRemain: 0.5,
       });
-      hlsRef.current = hls;
-      hls.loadSource(hlsUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      playerRef.current = player;
+      player.attachMediaElement(video);
+      player.load();
+      player.play();
+
+      player.on(mpegts.Events.ERROR, () => {
+        setError('Stream unavailable');
         setLoading(false);
-        video.play().catch(() => {});
       });
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          hls.destroy();
-          hlsRef.current = null;
-          // Fallback: try .ts direct
-          tryDirectUrl(tsUrl);
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = hlsUrl;
-      video.addEventListener('loadedmetadata', () => { setLoading(false); video.play(); });
+
+      video.addEventListener('canplay', () => setLoading(false), { once: true });
+      video.addEventListener('playing', () => setLoading(false), { once: true });
     } else {
-      tryDirectUrl(tsUrl);
+      // For VOD (mp4, mkv) - direct playback
+      video.src = url;
+      video.addEventListener('canplay', () => setLoading(false), { once: true });
+      video.addEventListener('error', () => {
+        setError('Video unavailable');
+        setLoading(false);
+      }, { once: true });
+      video.play().catch(() => {});
     }
 
     return () => {
-      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current.unload();
+        playerRef.current.detachMediaElement();
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
       video.src = '';
-      video.load();
     };
   }, [url]);
 
@@ -600,7 +602,7 @@ function LiveTVScreen({ onBack, api }) {
               {playingChannel && api && (
                 <div className="inline-player-container">
                   <VideoPlayer
-                    url={api.getLiveUrl(playingChannel.stream_id, 'm3u8')}
+                    url={api.getLiveUrl(playingChannel.stream_id, 'ts')}
                     title={playingChannel.name}
                     onClose={() => setPlayingChannel(null)}
                     inline={true}
@@ -651,6 +653,7 @@ function MediaScreen({ type, onBack, api }) {
   const [selectedSeries, setSelectedSeries] = useState(null);
   const [seriesInfo, setSeriesInfo] = useState(null);
   const [seriesLoading, setSeriesLoading] = useState(false);
+  const [playingItem, setPlayingItem] = useState(null);
 
   // Load categories on mount
   useEffect(() => {
@@ -742,12 +745,16 @@ function MediaScreen({ type, onBack, api }) {
                 <h3 className="series-season-title">Season {season}</h3>
                 <div className="series-episodes">
                   {seriesInfo.episodes[season].map(ep => (
-                    <div key={ep.id} className="series-episode">
+                    <div key={ep.id} className="series-episode" onClick={() => setPlayingItem({
+                      stream_id: ep.id, name: ep.title || `Episode ${ep.episode_num}`,
+                      container_extension: ep.container_extension || 'mp4', isSeries: true
+                    })}>
                       <span className="ep-num">E{ep.episode_num}</span>
                       <div className="ep-info">
                         <div className="ep-title">{ep.title || `Episode ${ep.episode_num}`}</div>
                         {ep.info?.duration && <span className="ep-duration">{ep.info.duration}</span>}
                       </div>
+                      <span className="ep-play">&#9654;</span>
                     </div>
                   ))}
                 </div>
@@ -794,11 +801,13 @@ function MediaScreen({ type, onBack, api }) {
             const posterUrl = item.stream_icon || item.cover || '';
             const itemName = item.name || item.title || '?';
             return (
-              <div key={item.stream_id || item.series_id} className="media-card" onClick={() => !isVod ? handleSeriesClick(item) : null}>
+              <div key={item.stream_id || item.series_id} className="media-card"
+                onClick={() => isVod ? setPlayingItem(item) : handleSeriesClick(item)}>
                 <div className="media-poster"
                   style={posterUrl ? { backgroundImage: `url(${posterUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
                 >
                   {!posterUrl && <span className="media-poster-letter">{itemName.charAt(0)}</span>}
+                  <div className="media-play-overlay">&#9654;</div>
                 </div>
                 <div className="media-info">
                   <div className="media-title">{itemName}</div>
@@ -813,6 +822,17 @@ function MediaScreen({ type, onBack, api }) {
           })}
         </div>
       </div>
+
+      {/* VOD / Episode Video Player */}
+      {playingItem && api && (
+        <VideoPlayer
+          url={playingItem.isSeries
+            ? api.getSeriesUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')
+            : api.getVodUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')}
+          title={playingItem.name || playingItem.title}
+          onClose={() => setPlayingItem(null)}
+        />
+      )}
     </div>
   );
 }
