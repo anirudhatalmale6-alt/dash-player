@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { mockData } from './services/xtreamApi';
 import axios from 'axios';
 import mpegts from 'mpegts.js';
+import Hls from 'hls.js';
 import './styles.css';
 
 /* ── Xtream API helper ── */
@@ -355,62 +356,123 @@ function b64decode(str) {
 function VideoPlayer({ url, onClose, title, inline }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
+  const hlsRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const cleanup = useCallback(() => {
+    if (playerRef.current) {
+      try { playerRef.current.pause(); } catch(e) {}
+      try { playerRef.current.unload(); } catch(e) {}
+      try { playerRef.current.detachMediaElement(); } catch(e) {}
+      try { playerRef.current.destroy(); } catch(e) {}
+      playerRef.current = null;
+    }
+    if (hlsRef.current) {
+      try { hlsRef.current.destroy(); } catch(e) {}
+      hlsRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!url || !videoRef.current) return;
     setError(null);
     setLoading(true);
+    cleanup();
     const video = videoRef.current;
 
     const isLive = url.includes('/live/');
-    const isMpegTs = url.endsWith('.ts') || isLive;
+    const baseUrl = url.replace(/\.\w+$/, '');
 
-    // Use mpegts.js for MPEG-TS streams (live channels)
-    if (isMpegTs && mpegts.isSupported()) {
-      const tsUrl = url.replace(/\.\w+$/, '.ts');
+    // Strategy: for live streams try mpegts(.ts) first, then HLS(.m3u8)
+    // For VOD, try native first (mp4), then HLS
+    const tryMpegTs = () => {
+      if (!mpegts.isSupported()) return tryHls();
+      const tsUrl = baseUrl + '.ts';
       const player = mpegts.createPlayer({
         type: 'mpegts',
         isLive: isLive,
         url: tsUrl,
       }, {
         enableWorker: true,
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 3,
-        liveBufferLatencyMinRemain: 0.5,
+        lazyLoadMaxDuration: 180,
+        liveBufferLatencyChasing: isLive,
+        liveBufferLatencyMaxLatency: isLive ? 5 : 30,
+        liveBufferLatencyMinRemain: isLive ? 1 : 3,
+        autoCleanupSourceBuffer: true,
       });
       playerRef.current = player;
       player.attachMediaElement(video);
       player.load();
-      player.play();
 
+      let errorTriggered = false;
       player.on(mpegts.Events.ERROR, () => {
-        setError('Stream unavailable');
-        setLoading(false);
+        if (errorTriggered) return;
+        errorTriggered = true;
+        cleanup();
+        tryHls(); // fallback
       });
 
       video.addEventListener('canplay', () => setLoading(false), { once: true });
       video.addEventListener('playing', () => setLoading(false), { once: true });
-    } else {
-      // For VOD (mp4, mkv) - direct playback
+      video.play().catch(() => {});
+
+      // Timeout: if no data in 8s, try HLS
+      setTimeout(() => {
+        if (loading && !errorTriggered && video.readyState < 2) {
+          errorTriggered = true;
+          cleanup();
+          tryHls();
+        }
+      }, 8000);
+    };
+
+    const tryHls = () => {
+      if (!Hls.isSupported()) return tryDirect();
+      const hlsUrl = baseUrl + '.m3u8';
+      const hls = new Hls({
+        enableWorker: true,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 120,
+        startLevel: -1,
+      });
+      hlsRef.current = hls;
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setLoading(false);
+        video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          cleanup();
+          tryDirect();
+        }
+      });
+    };
+
+    const tryDirect = () => {
       video.src = url;
       video.addEventListener('canplay', () => setLoading(false), { once: true });
       video.addEventListener('error', () => {
-        setError('Video unavailable');
+        setError('Stream unavailable - try another channel');
         setLoading(false);
       }, { once: true });
+      video.play().catch(() => {});
+    };
+
+    if (isLive) {
+      tryMpegTs();
+    } else {
+      // VOD: try direct first (mp4), then HLS
+      video.src = url;
+      video.addEventListener('canplay', () => setLoading(false), { once: true });
+      video.addEventListener('error', () => tryHls(), { once: true });
       video.play().catch(() => {});
     }
 
     return () => {
-      if (playerRef.current) {
-        playerRef.current.pause();
-        playerRef.current.unload();
-        playerRef.current.detachMediaElement();
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
+      cleanup();
       video.src = '';
     };
   }, [url]);
@@ -654,6 +716,9 @@ function MediaScreen({ type, onBack, api }) {
   const [seriesInfo, setSeriesInfo] = useState(null);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [playingItem, setPlayingItem] = useState(null);
+  const [activeSeason, setActiveSeason] = useState(null);
+  const [epPage, setEpPage] = useState(0);
+  const EP_PER_PAGE = 20;
 
   // Load categories on mount
   useEffect(() => {
@@ -736,15 +801,16 @@ function MediaScreen({ type, onBack, api }) {
   };
 
   // Series detail view
-  const [activeSeason, setActiveSeason] = useState(null);
   if (selectedSeries && !isVod) {
     const seasons = seriesInfo?.episodes ? Object.keys(seriesInfo.episodes).sort((a, b) => Number(a) - Number(b)) : [];
     const currentSeason = activeSeason || seasons[0];
-    const currentEpisodes = currentSeason && seriesInfo?.episodes?.[currentSeason] ? seriesInfo.episodes[currentSeason] : [];
+    const allEpisodes = currentSeason && seriesInfo?.episodes?.[currentSeason] ? seriesInfo.episodes[currentSeason] : [];
+    const totalEpPages = Math.ceil(allEpisodes.length / EP_PER_PAGE);
+    const currentEpisodes = allEpisodes.slice(epPage * EP_PER_PAGE, (epPage + 1) * EP_PER_PAGE);
     return (
       <div className="section-screen">
         <div className="section-header">
-          <button className="back-btn" onClick={() => { setSelectedSeries(null); setSeriesInfo(null); setActiveSeason(null); }}>&#8592; Back</button>
+          <button className="back-btn" onClick={() => { setSelectedSeries(null); setSeriesInfo(null); setActiveSeason(null); setEpPage(0); }}>&#8592; Back</button>
           <h1 className="section-title">{selectedSeries.name}</h1>
         </div>
         <div className="section-body">
@@ -772,11 +838,24 @@ function MediaScreen({ type, onBack, api }) {
                     <button
                       key={season}
                       className={`season-tab ${(currentSeason === season) ? 'active' : ''}`}
-                      onClick={() => setActiveSeason(season)}
+                      onClick={() => { setActiveSeason(season); setEpPage(0); }}
                     >
                       Season {season}
+                      <span className="season-tab-count">{seriesInfo.episodes[season].length}</span>
                     </button>
                   ))}
+                </div>
+
+                {/* Episode count & pagination header */}
+                <div className="ep-pagination-header">
+                  <span className="ep-count">{allEpisodes.length} episodes</span>
+                  {totalEpPages > 1 && (
+                    <div className="ep-pagination">
+                      <button className="ep-page-btn" disabled={epPage === 0} onClick={() => setEpPage(p => p - 1)}>&#8592; Prev</button>
+                      <span className="ep-page-info">Page {epPage + 1} of {totalEpPages}</span>
+                      <button className="ep-page-btn" disabled={epPage >= totalEpPages - 1} onClick={() => setEpPage(p => p + 1)}>Next &#8594;</button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="series-episodes">
@@ -794,6 +873,15 @@ function MediaScreen({ type, onBack, api }) {
                     </div>
                   ))}
                 </div>
+
+                {/* Bottom pagination */}
+                {totalEpPages > 1 && (
+                  <div className="ep-pagination" style={{justifyContent: 'center', marginTop: 12}}>
+                    <button className="ep-page-btn" disabled={epPage === 0} onClick={() => setEpPage(p => p - 1)}>&#8592; Prev</button>
+                    <span className="ep-page-info">Page {epPage + 1} of {totalEpPages}</span>
+                    <button className="ep-page-btn" disabled={epPage >= totalEpPages - 1} onClick={() => setEpPage(p => p + 1)}>Next &#8594;</button>
+                  </div>
+                )}
               </>
             )}
             {!seriesLoading && seasons.length === 0 && <div className="loading-indicator">No episode data available</div>}
