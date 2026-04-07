@@ -27,6 +27,8 @@ function createXtreamApi(url, username, password) {
     getVodStreams: (catId) => req('get_vod_streams', catId ? { category_id: catId } : {}),
     getSeriesCategories: () => req('get_series_categories'),
     getSeries: (catId) => req('get_series', catId ? { category_id: catId } : {}),
+    getSeriesInfo: (seriesId) => req('get_series_info', { series_id: seriesId }),
+    getVodInfo: (vodId) => req('get_vod_info', { vod_id: vodId }),
     getEPG: (streamId) => req('get_short_epg', { stream_id: streamId }),
     getLiveUrl: (streamId, ext = 'ts') => `${baseUrl}/live/${username}/${password}/${streamId}.${ext}`,
     getVodUrl: (streamId, ext = 'mp4') => `${baseUrl}/movie/${username}/${password}/${streamId}.${ext}`,
@@ -336,51 +338,72 @@ function HomeScreen({ onNavigate, credentials, playerLicense }) {
   );
 }
 
+/* ── Base64 to UTF-8 decoder (handles Turkish/special chars) ── */
+function b64decode(str) {
+  try {
+    return decodeURIComponent(atob(str).split('').map(c =>
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join(''));
+  } catch (e) {
+    try { return atob(str); } catch (e2) { return str; }
+  }
+}
+
 /* ── LIVE TV SCREEN ── */
 function LiveTVScreen({ onBack, api }) {
   const [categories, setCategories] = useState([{ category_id: 'all', category_name: 'All Channels' }]);
   const [channels, setChannels] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [epgData, setEpgData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [channelLoading, setChannelLoading] = useState(false);
 
+  // Load categories on mount
   useEffect(() => {
     let cancelled = false;
-    const fetchData = async () => {
+    const fetchCats = async () => {
       setLoading(true);
       if (api) {
-        const [cats, streams] = await Promise.all([
-          api.getLiveCategories(),
-          api.getLiveStreams(),
-        ]);
-        if (!cancelled) {
-          if (cats && Array.isArray(cats) && cats.length > 0) {
-            setCategories([{ category_id: 'all', category_name: 'All Channels' }, ...cats]);
-          } else {
-            setCategories([{ category_id: 'all', category_name: 'All Channels' }, ...mockData.categories]);
-          }
-          if (streams && Array.isArray(streams) && streams.length > 0) {
-            setChannels(streams);
-          } else {
-            setChannels(mockData.channels);
-          }
+        const cats = await api.getLiveCategories();
+        if (!cancelled && cats && Array.isArray(cats) && cats.length > 0) {
+          setCategories(cats);
+          setSelectedCategory(cats[0].category_id); // select first category
+        } else if (!cancelled) {
+          setCategories(mockData.categories);
+          setSelectedCategory(mockData.categories[0]?.category_id);
         }
       } else {
-        setCategories([{ category_id: 'all', category_name: 'All Channels' }, ...mockData.categories]);
+        setCategories(mockData.categories);
+        setSelectedCategory('all');
         setChannels(mockData.channels);
       }
       if (!cancelled) setLoading(false);
     };
-    fetchData();
+    fetchCats();
     return () => { cancelled = true; };
   }, [api]);
 
+  // Load channels when category changes
+  useEffect(() => {
+    if (!selectedCategory || !api) return;
+    let cancelled = false;
+    const fetchStreams = async () => {
+      setChannelLoading(true);
+      const streams = await api.getLiveStreams(selectedCategory);
+      if (!cancelled && streams && Array.isArray(streams)) {
+        setChannels(streams);
+      }
+      if (!cancelled) setChannelLoading(false);
+    };
+    fetchStreams();
+    return () => { cancelled = true; };
+  }, [selectedCategory, api]);
+
   const filtered = channels.filter(ch => {
-    const matchCat = selectedCategory === 'all' || String(ch.category_id) === String(selectedCategory);
     const matchSearch = !searchQuery || ch.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
+    return matchSearch;
   });
 
   useEffect(() => {
@@ -390,10 +413,10 @@ function LiveTVScreen({ onBack, api }) {
           if (data && data.epg_listings && data.epg_listings.length > 0) {
             setEpgData(data.epg_listings.map((e, i) => ({
               id: e.id || i,
-              title: e.title ? atob(e.title) : 'No Title',
-              description: e.description ? atob(e.description) : '',
-              start: new Date(e.start * 1000 || e.start).toISOString(),
-              end: new Date(e.end * 1000 || e.end).toISOString(),
+              title: e.title ? b64decode(e.title) : 'No Title',
+              description: e.description ? b64decode(e.description) : '',
+              start: e.start,
+              end: e.end,
             })));
           } else {
             setEpgData(mockData.generateEPG(selectedChannel.num || selectedChannel.stream_id));
@@ -405,11 +428,7 @@ function LiveTVScreen({ onBack, api }) {
     }
   }, [selectedChannel, api]);
 
-  const getCurrentProgram = (num) => {
-    const epg = mockData.generateEPG(num);
-    const now = new Date();
-    return epg.find(p => new Date(p.start) <= now && new Date(p.end) > now);
-  };
+  const getCurrentProgram = () => null; // Skip mock EPG lookup for real data (too slow with 19K channels)
 
   const isCurrentProgram = (p) => { const n = new Date(); return new Date(p.start) <= n && new Date(p.end) > n; };
   const isPastProgram = (p) => new Date(p.end) < new Date();
@@ -437,13 +456,10 @@ function LiveTVScreen({ onBack, api }) {
             {categories.map(cat => (
               <div
                 key={cat.category_id}
-                className={`sidebar-cat-item ${selectedCategory === cat.category_id ? 'active' : ''}`}
+                className={`sidebar-cat-item ${String(selectedCategory) === String(cat.category_id) ? 'active' : ''}`}
                 onClick={() => setSelectedCategory(cat.category_id)}
               >
                 <span>{cat.category_name}</span>
-                <span className="sidebar-cat-count">
-                  {cat.category_id === 'all' ? channels.length : channels.filter(c => c.category_id === cat.category_id).length}
-                </span>
               </div>
             ))}
           </div>
@@ -451,10 +467,8 @@ function LiveTVScreen({ onBack, api }) {
 
         {/* Channel List */}
         <div className="section-channel-list">
-          {loading && <div className="loading-indicator">Loading channels...</div>}
-          {!loading && filtered.map(ch => {
-            const prog = getCurrentProgram(ch.num || ch.stream_id);
-            return (
+          {(loading || channelLoading) && <div className="loading-indicator">Loading channels...</div>}
+          {!loading && !channelLoading && filtered.map(ch => (
               <div
                 key={ch.stream_id}
                 className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
@@ -462,17 +476,16 @@ function LiveTVScreen({ onBack, api }) {
               >
                 <span className="ch-num">{ch.num || ch.stream_id}</span>
                 {ch.stream_icon ? (
-                  <img className="ch-icon-img" src={ch.stream_icon} alt="" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                  <img className="ch-icon-img" src={ch.stream_icon} alt="" onError={e => { e.target.style.display = 'none'; if(e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
                 ) : null}
-                <div className="ch-icon" style={ch.stream_icon ? { display: 'none' } : {}}>{ch.name.charAt(0)}</div>
+                <div className="ch-icon" style={ch.stream_icon ? { display: 'none' } : {}}>{(ch.name || '?').charAt(0)}</div>
                 <div className="ch-info">
                   <div className="ch-name">{ch.name}</div>
-                  <div className="ch-prog">{prog?.title || ch.epg_channel_id || 'No info'}</div>
+                  <div className="ch-prog">{ch.epg_channel_id || ''}</div>
                 </div>
                 {selectedChannel?.stream_id === ch.stream_id && <div className="ch-live-dot" />}
               </div>
-            );
-          })}
+          ))}
         </div>
 
         {/* EPG */}
@@ -520,42 +533,123 @@ function MediaScreen({ type, onBack, api }) {
   const isVod = type === 'vod';
   const title = isVod ? 'Movies' : 'Series';
 
-  const [categories, setCategories] = useState([{ category_id: 'all', category_name: `All ${title}` }]);
+  const [categories, setCategories] = useState([]);
   const [allItems, setAllItems] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [selectedSeries, setSelectedSeries] = useState(null);
+  const [seriesInfo, setSeriesInfo] = useState(null);
+  const [seriesLoading, setSeriesLoading] = useState(false);
 
+  // Load categories on mount
   useEffect(() => {
     let cancelled = false;
-    const fetchData = async () => {
+    const fetchCats = async () => {
       setLoading(true);
       const fallbackCats = isVod ? mockData.vodCategories : mockData.seriesCategories;
-      const fallbackItems = isVod ? mockData.vodStreams : mockData.series;
       if (api) {
-        const [cats, items] = await Promise.all([
-          isVod ? api.getVodCategories() : api.getSeriesCategories(),
-          isVod ? api.getVodStreams() : api.getSeries(),
-        ]);
+        const cats = isVod ? await api.getVodCategories() : await api.getSeriesCategories();
         if (!cancelled) {
-          setCategories([{ category_id: 'all', category_name: `All ${title}` }, ...(cats && Array.isArray(cats) && cats.length > 0 ? cats : fallbackCats)]);
-          setAllItems(items && Array.isArray(items) && items.length > 0 ? items : fallbackItems);
+          const catList = cats && Array.isArray(cats) && cats.length > 0 ? cats : fallbackCats;
+          setCategories(catList);
+          setSelectedCategory(catList[0]?.category_id);
         }
       } else {
-        setCategories([{ category_id: 'all', category_name: `All ${title}` }, ...fallbackCats]);
-        setAllItems(fallbackItems);
+        setCategories(fallbackCats);
+        setSelectedCategory(fallbackCats[0]?.category_id);
+        setAllItems(isVod ? mockData.vodStreams : mockData.series);
       }
       if (!cancelled) setLoading(false);
     };
-    fetchData();
+    fetchCats();
     return () => { cancelled = true; };
   }, [api, type]);
 
+  // Load items when category changes
+  useEffect(() => {
+    if (!selectedCategory || !api) return;
+    let cancelled = false;
+    const fetchItems = async () => {
+      setItemsLoading(true);
+      const items = isVod
+        ? await api.getVodStreams(selectedCategory)
+        : await api.getSeries(selectedCategory);
+      if (!cancelled && items && Array.isArray(items)) {
+        setAllItems(items);
+      }
+      if (!cancelled) setItemsLoading(false);
+    };
+    fetchItems();
+    return () => { cancelled = true; };
+  }, [selectedCategory, api, type]);
+
   const filtered = allItems.filter(item => {
-    const matchCat = selectedCategory === 'all' || String(item.category_id) === String(selectedCategory);
     const matchSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
+    return matchSearch;
   });
+
+  // Handle series click - fetch seasons/episodes
+  const handleSeriesClick = async (item) => {
+    if (isVod) return; // VOD doesn't have episodes
+    setSelectedSeries(item);
+    setSeriesLoading(true);
+    if (api) {
+      const info = await api.getSeriesInfo(item.series_id);
+      if (info) {
+        setSeriesInfo(info);
+      }
+    }
+    setSeriesLoading(false);
+  };
+
+  // Series detail view
+  if (selectedSeries && !isVod) {
+    const seasons = seriesInfo?.episodes ? Object.keys(seriesInfo.episodes).sort((a, b) => Number(a) - Number(b)) : [];
+    return (
+      <div className="section-screen">
+        <div className="section-header">
+          <button className="back-btn" onClick={() => { setSelectedSeries(null); setSeriesInfo(null); }}>&#8592; Back</button>
+          <h1 className="section-title">{selectedSeries.name}</h1>
+        </div>
+        <div className="section-body">
+          <div className="series-detail">
+            <div className="series-detail-top">
+              {(selectedSeries.cover || selectedSeries.stream_icon) && (
+                <img className="series-detail-cover" src={selectedSeries.cover || selectedSeries.stream_icon} alt="" />
+              )}
+              <div className="series-detail-info">
+                <h2>{selectedSeries.name}</h2>
+                {seriesInfo?.info?.plot && <p className="series-plot">{seriesInfo.info.plot}</p>}
+                {seriesInfo?.info?.genre && <p className="series-meta">Genre: {seriesInfo.info.genre}</p>}
+                {seriesInfo?.info?.releaseDate && <p className="series-meta">Released: {seriesInfo.info.releaseDate}</p>}
+                {selectedSeries.rating && <p className="series-meta">Rating: {selectedSeries.rating}</p>}
+              </div>
+            </div>
+            {seriesLoading && <div className="loading-indicator">Loading episodes...</div>}
+            {!seriesLoading && seasons.length > 0 && seasons.map(season => (
+              <div key={season} className="series-season">
+                <h3 className="series-season-title">Season {season}</h3>
+                <div className="series-episodes">
+                  {seriesInfo.episodes[season].map(ep => (
+                    <div key={ep.id} className="series-episode">
+                      <span className="ep-num">E{ep.episode_num}</span>
+                      <div className="ep-info">
+                        <div className="ep-title">{ep.title || `Episode ${ep.episode_num}`}</div>
+                        {ep.info?.duration && <span className="ep-duration">{ep.info.duration}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!seriesLoading && seasons.length === 0 && <div className="loading-indicator">No episode data available</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="section-screen">
@@ -580,25 +674,23 @@ function MediaScreen({ type, onBack, api }) {
                 onClick={() => setSelectedCategory(cat.category_id)}
               >
                 <span>{cat.category_name}</span>
-                <span className="sidebar-cat-count">
-                  {cat.category_id === 'all' ? allItems.length : allItems.filter(i => String(i.category_id) === String(cat.category_id)).length}
-                </span>
               </div>
             ))}
           </div>
         </div>
 
         <div className="section-media-grid">
-          {loading && <div className="loading-indicator">Loading {title.toLowerCase()}...</div>}
-          {!loading && filtered.map(item => (
-            <div key={item.stream_id || item.series_id} className="media-card">
-              {item.stream_icon || item.cover ? (
-                <img className="media-poster-img" src={item.stream_icon || item.cover} alt="" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+          {(loading || itemsLoading) && <div className="loading-indicator">Loading {title.toLowerCase()}...</div>}
+          {!loading && !itemsLoading && filtered.map(item => (
+            <div key={item.stream_id || item.series_id} className="media-card" onClick={() => !isVod && handleSeriesClick(item)}>
+              {(item.stream_icon || item.cover) ? (
+                <img className="media-poster-img" src={item.stream_icon || item.cover} alt=""
+                  onError={e => { e.target.style.display = 'none'; if(e.target.nextElementSibling) e.target.nextElementSibling.style.display = 'flex'; }} />
               ) : null}
-              <div className="media-poster" style={(item.stream_icon || item.cover) ? { display: 'none' } : {}}>{item.name.charAt(0)}</div>
+              <div className="media-poster" style={(item.stream_icon || item.cover) ? { display: 'none' } : {}}>{(item.name || '?').charAt(0)}</div>
               <div className="media-info">
                 <div className="media-title">{item.name}</div>
-                {item.rating && (
+                {item.rating && item.rating !== '0' && (
                   <div className="media-rating">
                     <span className="media-star">&#9733;</span> {item.rating}
                   </div>
