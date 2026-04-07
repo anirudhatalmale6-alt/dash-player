@@ -351,7 +351,7 @@ function b64decode(str) {
 }
 
 /* ── VIDEO PLAYER COMPONENT ── */
-function VideoPlayer({ url, onClose, title }) {
+function VideoPlayer({ url, onClose, title, inline }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
   const [error, setError] = useState(null);
@@ -363,47 +363,65 @@ function VideoPlayer({ url, onClose, title }) {
     setLoading(true);
     const video = videoRef.current;
 
-    // Try HLS first (.m3u8)
-    if (url.includes('.m3u8') || url.includes('/live/')) {
-      const hlsUrl = url.replace(/\.\w+$/, '.m3u8');
-      if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-        });
-        hlsRef.current = hls;
-        hls.loadSource(hlsUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          setLoading(false);
-          video.play().catch(() => {});
-        });
-        hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) {
-            // Try direct URL as fallback
-            hls.destroy();
-            video.src = url;
-            video.play().catch(() => setError('Stream unavailable'));
-          }
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = hlsUrl;
-        video.addEventListener('loadedmetadata', () => { setLoading(false); video.play(); });
-      }
-    } else {
-      // Direct URL (mp4, mkv, etc.)
-      video.src = url;
-      video.addEventListener('loadedmetadata', () => { setLoading(false); });
-      video.addEventListener('error', () => setError('Stream unavailable'));
+    // Build URLs to try: m3u8 first, then ts, then original
+    const hlsUrl = url.replace(/\.\w+$/, '.m3u8');
+    const tsUrl = url.replace(/\.\w+$/, '.ts');
+
+    const tryDirectUrl = (directUrl) => {
+      video.src = directUrl;
+      video.addEventListener('loadedmetadata', () => setLoading(false), { once: true });
+      video.addEventListener('canplay', () => setLoading(false), { once: true });
+      video.addEventListener('error', () => setError('Stream unavailable'), { once: true });
       video.play().catch(() => {});
+    };
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        xhrSetup: (xhr) => {
+          xhr.timeout = 10000;
+        },
+      });
+      hlsRef.current = hls;
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setLoading(false);
+        video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          hls.destroy();
+          hlsRef.current = null;
+          // Fallback: try .ts direct
+          tryDirectUrl(tsUrl);
+        }
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = hlsUrl;
+      video.addEventListener('loadedmetadata', () => { setLoading(false); video.play(); });
+    } else {
+      tryDirectUrl(tsUrl);
     }
 
     return () => {
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
       video.src = '';
+      video.load();
     };
   }, [url]);
+
+  if (inline) {
+    return (
+      <div className="inline-player">
+        {loading && !error && <div className="inline-player-loading">Connecting...</div>}
+        {error && <div className="inline-player-error">{error}</div>}
+        <video ref={videoRef} className="inline-video-element" controls autoPlay />
+      </div>
+    );
+  }
 
   return (
     <div className="video-player-overlay">
@@ -560,7 +578,7 @@ function LiveTVScreen({ onBack, api }) {
           ))}
         </div>
 
-        {/* EPG */}
+        {/* EPG + Inline Player */}
         <div className="section-epg">
           {selectedChannel ? (
             <>
@@ -569,9 +587,27 @@ function LiveTVScreen({ onBack, api }) {
                   <div className="epg-ch-name">{selectedChannel.name}</div>
                   <div className="epg-ch-cat">{selectedChannel.category_name}</div>
                 </div>
-                <button className="epg-play-btn" onClick={() => setPlayingChannel(selectedChannel)}>&#9654; Play</button>
+                {!playingChannel && (
+                  <button className="epg-play-btn" onClick={() => setPlayingChannel(selectedChannel)}>&#9654; Play</button>
+                )}
+                {playingChannel && (
+                  <button className="epg-play-btn" onClick={() => setPlayingChannel(null)} style={{background: 'linear-gradient(135deg, #ef4444, #dc2626)'}}>&#9632; Stop</button>
+                )}
                 <div className="epg-live-badge">LIVE</div>
               </div>
+
+              {/* Inline Video Player */}
+              {playingChannel && api && (
+                <div className="inline-player-container">
+                  <VideoPlayer
+                    url={api.getLiveUrl(playingChannel.stream_id, 'm3u8')}
+                    title={playingChannel.name}
+                    onClose={() => setPlayingChannel(null)}
+                    inline={true}
+                  />
+                </div>
+              )}
+
               <div className="epg-programs">
                 {epgData.map((prog, idx) => (
                   <div key={prog.id} className={`epg-prog ${idx % 2 === 1 ? 'epg-purple' : ''} ${isCurrentProgram(prog) ? 'current' : ''} ${isPastProgram(prog) ? 'past' : ''}`}>
@@ -597,15 +633,6 @@ function LiveTVScreen({ onBack, api }) {
           )}
         </div>
       </div>
-
-      {/* Video Player Overlay */}
-      {playingChannel && api && (
-        <VideoPlayer
-          url={api.getLiveUrl(playingChannel.stream_id, 'm3u8')}
-          title={playingChannel.name}
-          onClose={() => setPlayingChannel(null)}
-        />
-      )}
     </div>
   );
 }
@@ -763,23 +790,27 @@ function MediaScreen({ type, onBack, api }) {
 
         <div className="section-media-grid">
           {(loading || itemsLoading) && <div className="loading-indicator">Loading {title.toLowerCase()}...</div>}
-          {!loading && !itemsLoading && filtered.map(item => (
-            <div key={item.stream_id || item.series_id} className="media-card" onClick={() => !isVod && handleSeriesClick(item)}>
-              {(item.stream_icon || item.cover) ? (
-                <img className="media-poster-img" src={item.stream_icon || item.cover} alt=""
-                  onError={e => { e.target.style.display = 'none'; if(e.target.nextElementSibling) e.target.nextElementSibling.style.display = 'flex'; }} />
-              ) : null}
-              <div className="media-poster" style={(item.stream_icon || item.cover) ? { display: 'none' } : {}}>{(item.name || '?').charAt(0)}</div>
-              <div className="media-info">
-                <div className="media-title">{item.name}</div>
-                {item.rating && item.rating !== '0' && (
-                  <div className="media-rating">
-                    <span className="media-star">&#9733;</span> {item.rating}
-                  </div>
-                )}
+          {!loading && !itemsLoading && filtered.map(item => {
+            const posterUrl = item.stream_icon || item.cover || '';
+            const itemName = item.name || item.title || '?';
+            return (
+              <div key={item.stream_id || item.series_id} className="media-card" onClick={() => !isVod ? handleSeriesClick(item) : null}>
+                <div className="media-poster"
+                  style={posterUrl ? { backgroundImage: `url(${posterUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+                >
+                  {!posterUrl && <span className="media-poster-letter">{itemName.charAt(0)}</span>}
+                </div>
+                <div className="media-info">
+                  <div className="media-title">{itemName}</div>
+                  {item.rating && item.rating !== '0' && String(item.rating) !== '0' && (
+                    <div className="media-rating">
+                      <span className="media-star">&#9733;</span> {item.rating}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
