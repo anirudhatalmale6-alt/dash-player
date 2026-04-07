@@ -765,13 +765,25 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .series-meta {
   font-size: 12px; color: var(--text-muted); margin-bottom: 4px;
 }
-.series-season {
-  margin-bottom: 20px;
+/* Season Tabs */
+.season-tabs {
+  display: flex; gap: 4px; padding: 4px;
+  background: rgba(124,58,237,0.04); border-radius: 12px;
+  margin-bottom: 16px; overflow-x: auto;
 }
-.series-season-title {
-  font-size: 16px; font-weight: 600; color: var(--purple);
-  padding: 8px 0; border-bottom: 2px solid rgba(124,58,237,0.1);
-  margin-bottom: 8px;
+.season-tab {
+  padding: 10px 20px; border-radius: 10px; border: none;
+  background: transparent; color: var(--text-sub);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.25s; white-space: nowrap;
+  font-family: 'Inter', sans-serif;
+}
+.season-tab:hover {
+  background: rgba(124,58,237,0.08); color: var(--purple);
+}
+.season-tab.active {
+  background: linear-gradient(135deg, var(--purple), var(--purple-dark));
+  color: white; box-shadow: 0 4px 12px rgba(124,58,237,0.3);
 }
 .series-episodes {
   display: flex; flex-direction: column; gap: 4px;

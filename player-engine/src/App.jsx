@@ -702,6 +702,25 @@ function MediaScreen({ type, onBack, api }) {
     return matchSearch;
   });
 
+  // Pagination - show items in batches of 40
+  const BATCH_SIZE = 40;
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  const gridRef = useRef(null);
+
+  // Reset visible count when category or search changes
+  useEffect(() => { setVisibleCount(BATCH_SIZE); }, [selectedCategory, searchQuery]);
+
+  const visibleItems = filtered.slice(0, visibleCount);
+  const hasMore = visibleCount < filtered.length;
+
+  const handleScroll = useCallback(() => {
+    if (!gridRef.current || !hasMore) return;
+    const el = gridRef.current;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+      setVisibleCount(prev => Math.min(prev + BATCH_SIZE, filtered.length));
+    }
+  }, [hasMore, filtered.length]);
+
   // Handle series click - fetch seasons/episodes
   const handleSeriesClick = async (item) => {
     if (isVod) return; // VOD doesn't have episodes
@@ -717,12 +736,15 @@ function MediaScreen({ type, onBack, api }) {
   };
 
   // Series detail view
+  const [activeSeason, setActiveSeason] = useState(null);
   if (selectedSeries && !isVod) {
     const seasons = seriesInfo?.episodes ? Object.keys(seriesInfo.episodes).sort((a, b) => Number(a) - Number(b)) : [];
+    const currentSeason = activeSeason || seasons[0];
+    const currentEpisodes = currentSeason && seriesInfo?.episodes?.[currentSeason] ? seriesInfo.episodes[currentSeason] : [];
     return (
       <div className="section-screen">
         <div className="section-header">
-          <button className="back-btn" onClick={() => { setSelectedSeries(null); setSeriesInfo(null); }}>&#8592; Back</button>
+          <button className="back-btn" onClick={() => { setSelectedSeries(null); setSeriesInfo(null); setActiveSeason(null); }}>&#8592; Back</button>
           <h1 className="section-title">{selectedSeries.name}</h1>
         </div>
         <div className="section-body">
@@ -736,15 +758,29 @@ function MediaScreen({ type, onBack, api }) {
                 {seriesInfo?.info?.plot && <p className="series-plot">{seriesInfo.info.plot}</p>}
                 {seriesInfo?.info?.genre && <p className="series-meta">Genre: {seriesInfo.info.genre}</p>}
                 {seriesInfo?.info?.releaseDate && <p className="series-meta">Released: {seriesInfo.info.releaseDate}</p>}
-                {selectedSeries.rating && <p className="series-meta">Rating: {selectedSeries.rating}</p>}
+                {selectedSeries.rating && selectedSeries.rating !== '0' && <p className="series-meta">Rating: {selectedSeries.rating}</p>}
               </div>
             </div>
+
             {seriesLoading && <div className="loading-indicator">Loading episodes...</div>}
-            {!seriesLoading && seasons.length > 0 && seasons.map(season => (
-              <div key={season} className="series-season">
-                <h3 className="series-season-title">Season {season}</h3>
+
+            {/* Season Tabs */}
+            {!seriesLoading && seasons.length > 0 && (
+              <>
+                <div className="season-tabs">
+                  {seasons.map(season => (
+                    <button
+                      key={season}
+                      className={`season-tab ${(currentSeason === season) ? 'active' : ''}`}
+                      onClick={() => setActiveSeason(season)}
+                    >
+                      Season {season}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="series-episodes">
-                  {seriesInfo.episodes[season].map(ep => (
+                  {currentEpisodes.map(ep => (
                     <div key={ep.id} className="series-episode" onClick={() => setPlayingItem({
                       stream_id: ep.id, name: ep.title || `Episode ${ep.episode_num}`,
                       container_extension: ep.container_extension || 'mp4', isSeries: true
@@ -758,8 +794,8 @@ function MediaScreen({ type, onBack, api }) {
                     </div>
                   ))}
                 </div>
-              </div>
-            ))}
+              </>
+            )}
             {!seriesLoading && seasons.length === 0 && <div className="loading-indicator">No episode data available</div>}
           </div>
         </div>
@@ -795,9 +831,9 @@ function MediaScreen({ type, onBack, api }) {
           </div>
         </div>
 
-        <div className="section-media-grid">
+        <div className="section-media-grid" ref={gridRef} onScroll={handleScroll}>
           {(loading || itemsLoading) && <div className="loading-indicator">Loading {title.toLowerCase()}...</div>}
-          {!loading && !itemsLoading && filtered.map(item => {
+          {!loading && !itemsLoading && visibleItems.map(item => {
             const posterUrl = item.stream_icon || item.cover || '';
             const itemName = item.name || item.title || '?';
             return (
@@ -820,6 +856,7 @@ function MediaScreen({ type, onBack, api }) {
               </div>
             );
           })}
+          {hasMore && <div className="loading-indicator" style={{gridColumn: '1 / -1'}}>Showing {visibleCount} of {filtered.length} - scroll for more</div>}
         </div>
       </div>
 
