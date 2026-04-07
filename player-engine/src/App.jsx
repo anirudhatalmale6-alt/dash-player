@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { mockData } from './services/xtreamApi';
 import axios from 'axios';
+import Hls from 'hls.js';
 import './styles.css';
 
 /* ── Xtream API helper ── */
@@ -11,7 +12,7 @@ function createXtreamApi(url, username, password) {
       const res = await axios.get(`${baseUrl}/player_api.php`, {
         params: { username, password, action, ...params },
         headers: { 'User-Agent': 'DashPlayer/1.0' },
-        timeout: 15000,
+        timeout: 60000,
       });
       return res.data;
     } catch (e) {
@@ -349,12 +350,81 @@ function b64decode(str) {
   }
 }
 
+/* ── VIDEO PLAYER COMPONENT ── */
+function VideoPlayer({ url, onClose, title }) {
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!url || !videoRef.current) return;
+    setError(null);
+    setLoading(true);
+    const video = videoRef.current;
+
+    // Try HLS first (.m3u8)
+    if (url.includes('.m3u8') || url.includes('/live/')) {
+      const hlsUrl = url.replace(/\.\w+$/, '.m3u8');
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+        });
+        hlsRef.current = hls;
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setLoading(false);
+          video.play().catch(() => {});
+        });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) {
+            // Try direct URL as fallback
+            hls.destroy();
+            video.src = url;
+            video.play().catch(() => setError('Stream unavailable'));
+          }
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = hlsUrl;
+        video.addEventListener('loadedmetadata', () => { setLoading(false); video.play(); });
+      }
+    } else {
+      // Direct URL (mp4, mkv, etc.)
+      video.src = url;
+      video.addEventListener('loadedmetadata', () => { setLoading(false); });
+      video.addEventListener('error', () => setError('Stream unavailable'));
+      video.play().catch(() => {});
+    }
+
+    return () => {
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+      video.src = '';
+    };
+  }, [url]);
+
+  return (
+    <div className="video-player-overlay">
+      <div className="video-player-header">
+        <button className="video-close-btn" onClick={onClose}>&#10005;</button>
+        <span className="video-title">{title || 'Playing'}</span>
+      </div>
+      {loading && !error && <div className="video-loading">Connecting to stream...</div>}
+      {error && <div className="video-error">{error}</div>}
+      <video ref={videoRef} className="video-element" controls autoPlay />
+    </div>
+  );
+}
+
 /* ── LIVE TV SCREEN ── */
 function LiveTVScreen({ onBack, api }) {
   const [categories, setCategories] = useState([{ category_id: 'all', category_name: 'All Channels' }]);
   const [channels, setChannels] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedChannel, setSelectedChannel] = useState(null);
+  const [playingChannel, setPlayingChannel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [epgData, setEpgData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -473,6 +543,7 @@ function LiveTVScreen({ onBack, api }) {
                 key={ch.stream_id}
                 className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
                 onClick={() => setSelectedChannel(ch)}
+                onDoubleClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); }}
               >
                 <span className="ch-num">{ch.num || ch.stream_id}</span>
                 {ch.stream_icon ? (
@@ -483,6 +554,7 @@ function LiveTVScreen({ onBack, api }) {
                   <div className="ch-name">{ch.name}</div>
                   <div className="ch-prog">{ch.epg_channel_id || ''}</div>
                 </div>
+                <button className="ch-play-btn" onClick={(e) => { e.stopPropagation(); setSelectedChannel(ch); setPlayingChannel(ch); }} title="Play">&#9654;</button>
                 {selectedChannel?.stream_id === ch.stream_id && <div className="ch-live-dot" />}
               </div>
           ))}
@@ -497,6 +569,7 @@ function LiveTVScreen({ onBack, api }) {
                   <div className="epg-ch-name">{selectedChannel.name}</div>
                   <div className="epg-ch-cat">{selectedChannel.category_name}</div>
                 </div>
+                <button className="epg-play-btn" onClick={() => setPlayingChannel(selectedChannel)}>&#9654; Play</button>
                 <div className="epg-live-badge">LIVE</div>
               </div>
               <div className="epg-programs">
@@ -524,6 +597,15 @@ function LiveTVScreen({ onBack, api }) {
           )}
         </div>
       </div>
+
+      {/* Video Player Overlay */}
+      {playingChannel && api && (
+        <VideoPlayer
+          url={api.getLiveUrl(playingChannel.stream_id, 'm3u8')}
+          title={playingChannel.name}
+          onClose={() => setPlayingChannel(null)}
+        />
+      )}
     </div>
   );
 }
