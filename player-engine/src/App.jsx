@@ -750,8 +750,7 @@ function LiveTVScreen({ onBack, api }) {
               <div
                 key={ch.stream_id}
                 className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
-                onClick={() => setSelectedChannel(ch)}
-                onDoubleClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); }}
+                onClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); }}
               >
                 <span className="ch-num">{ch.num || ch.stream_id}</span>
                 {ch.stream_icon ? (
@@ -1013,6 +1012,15 @@ function MediaScreen({ type, onBack, api }) {
             {!seriesLoading && seasons.length === 0 && <div className="loading-indicator">No episode data available</div>}
           </div>
         </div>
+
+        {/* Episode Video Player */}
+        {playingItem && api && (
+          <VideoPlayer
+            url={api.getSeriesUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')}
+            title={playingItem.name || playingItem.title}
+            onClose={() => setPlayingItem(null)}
+          />
+        )}
       </div>
     );
   }
