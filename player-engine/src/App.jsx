@@ -357,10 +357,18 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
   const hlsRef = useRef(null);
+  const retryTimerRef = useRef(null);
+  const stallTimerRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const [currentFormat, setCurrentFormat] = useState('');
+  const mountedRef = useRef(true);
+  const MAX_RETRIES = 3;
 
   const cleanup = useCallback(() => {
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+    if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
     if (playerRef.current) {
       try { playerRef.current.pause(); } catch(e) {}
       try { playerRef.current.unload(); } catch(e) {}
@@ -374,87 +382,170 @@ function VideoPlayer({ url, onClose, title, inline }) {
     }
   }, []);
 
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
   useEffect(() => {
     if (!url || !videoRef.current) return;
     setError(null);
     setLoading(true);
+    setRetryCount(0);
     cleanup();
     const video = videoRef.current;
 
     const isLive = url.includes('/live/');
+    const isSeries = url.includes('/series/');
     const baseUrl = url.replace(/\.\w+$/, '');
 
-    // Strategy: for live streams try mpegts(.ts) first, then HLS(.m3u8)
-    // For VOD, try native first (mp4), then HLS
-    const tryMpegTs = () => {
+    // Stall detection: if video stops progressing for 10s, attempt recovery
+    const setupStallDetection = () => {
+      if (stallTimerRef.current) clearInterval(stallTimerRef.current);
+      let lastTime = 0;
+      let stallCount = 0;
+      stallTimerRef.current = setInterval(() => {
+        if (!video || video.paused || video.ended) return;
+        if (video.currentTime === lastTime && video.readyState < 3) {
+          stallCount++;
+          if (stallCount >= 3) { // 3 checks * 3s = ~9s stalled
+            stallCount = 0;
+            console.log('Stream stall detected, attempting recovery...');
+            // For mpegts, try seeking slightly ahead
+            if (playerRef.current && isLive) {
+              try {
+                const buffered = video.buffered;
+                if (buffered.length > 0) {
+                  video.currentTime = buffered.end(buffered.length - 1) - 0.5;
+                }
+              } catch(e) {}
+            }
+          }
+        } else {
+          stallCount = 0;
+        }
+        lastTime = video.currentTime;
+      }, 3000);
+    };
+
+    const onPlaying = () => {
+      if (!mountedRef.current) return;
+      setLoading(false);
+      setError(null);
+      setupStallDetection();
+    };
+
+    const tryMpegTs = (streamUrl) => {
       if (!mpegts.isSupported()) return tryHls();
-      const tsUrl = baseUrl + '.ts';
+      if (!mountedRef.current) return;
+      setCurrentFormat('MPEG-TS');
       const player = mpegts.createPlayer({
         type: 'mpegts',
         isLive: isLive,
-        url: tsUrl,
+        url: streamUrl,
       }, {
         enableWorker: true,
-        lazyLoadMaxDuration: 180,
+        lazyLoadMaxDuration: isLive ? 60 : 300,
         liveBufferLatencyChasing: isLive,
-        liveBufferLatencyMaxLatency: isLive ? 5 : 30,
-        liveBufferLatencyMinRemain: isLive ? 1 : 3,
+        liveBufferLatencyMaxLatency: isLive ? 8 : 60,
+        liveBufferLatencyMinRemain: isLive ? 2 : 5,
         autoCleanupSourceBuffer: true,
+        autoCleanupMaxBackwardDuration: 30,
+        autoCleanupMinBackwardDuration: 15,
+        seekType: 'range',
+        fixAudioTimestampGap: true,
       });
       playerRef.current = player;
       player.attachMediaElement(video);
       player.load();
 
       let errorTriggered = false;
-      player.on(mpegts.Events.ERROR, () => {
+      player.on(mpegts.Events.ERROR, (type, detail) => {
+        console.warn('mpegts error:', type, detail);
         if (errorTriggered) return;
         errorTriggered = true;
         cleanup();
-        tryHls(); // fallback
+        tryHls();
       });
 
-      video.addEventListener('canplay', () => setLoading(false), { once: true });
-      video.addEventListener('playing', () => setLoading(false), { once: true });
-      video.play().catch(() => {});
+      // Handle media info for better debugging
+      player.on(mpegts.Events.MEDIA_INFO, () => {
+        console.log('mpegts: media info received');
+      });
 
-      // Timeout: if no data in 8s, try HLS
+      video.addEventListener('canplay', onPlaying, { once: true });
+      video.addEventListener('playing', onPlaying, { once: true });
+
+      // Wait a bit then play to allow buffer to fill
       setTimeout(() => {
-        if (loading && !errorTriggered && video.readyState < 2) {
+        if (mountedRef.current && video) {
+          video.play().catch(() => {});
+        }
+      }, 300);
+
+      // Timeout: if no data in 10s, try next format
+      retryTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        if (video.readyState < 2 && !errorTriggered) {
+          console.log('mpegts timeout, falling back to HLS');
           errorTriggered = true;
           cleanup();
           tryHls();
         }
-      }, 8000);
+      }, 10000);
     };
 
     const tryHls = () => {
       if (!Hls.isSupported()) return tryDirect();
+      if (!mountedRef.current) return;
+      setCurrentFormat('HLS');
       const hlsUrl = baseUrl + '.m3u8';
       const hls = new Hls({
         enableWorker: true,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 120,
+        maxBufferLength: isLive ? 10 : 60,
+        maxMaxBufferLength: isLive ? 30 : 300,
         startLevel: -1,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 6,
+        fragLoadingTimeOut: 15000,
+        fragLoadingMaxRetry: 4,
+        levelLoadingTimeOut: 15000,
+        manifestLoadingTimeOut: 15000,
       });
       hlsRef.current = hls;
       hls.loadSource(hlsUrl);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (!mountedRef.current) return;
         setLoading(false);
         video.play().catch(() => {});
+        setupStallDetection();
       });
+      let hlsErrorTriggered = false;
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
+        if (data.fatal && !hlsErrorTriggered) {
+          hlsErrorTriggered = true;
+          console.warn('HLS fatal error, trying direct');
           cleanup();
           tryDirect();
         }
       });
+      // HLS timeout
+      retryTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        if (video.readyState < 2 && !hlsErrorTriggered) {
+          hlsErrorTriggered = true;
+          cleanup();
+          tryDirect();
+        }
+      }, 12000);
     };
 
     const tryDirect = () => {
+      if (!mountedRef.current) return;
+      setCurrentFormat('Direct');
       video.src = url;
-      video.addEventListener('canplay', () => setLoading(false), { once: true });
+      video.addEventListener('canplay', onPlaying, { once: true });
+      video.addEventListener('playing', onPlaying, { once: true });
       video.addEventListener('error', () => {
+        if (!mountedRef.current) return;
         setError('Stream unavailable - try another channel');
         setLoading(false);
       }, { once: true });
@@ -462,40 +553,75 @@ function VideoPlayer({ url, onClose, title, inline }) {
     };
 
     if (isLive) {
-      tryMpegTs();
+      // Live: mpegts(.ts) -> HLS(.m3u8) -> direct
+      tryMpegTs(baseUrl + '.ts');
     } else {
-      // VOD: try direct first (mp4), then HLS
+      // VOD/Series: try direct(mp4) first, then mpegts(.ts), then HLS(.m3u8)
+      setCurrentFormat('Direct');
       video.src = url;
-      video.addEventListener('canplay', () => setLoading(false), { once: true });
-      video.addEventListener('error', () => tryHls(), { once: true });
+      video.addEventListener('canplay', onPlaying, { once: true });
+      video.addEventListener('playing', onPlaying, { once: true });
+      let vodErrorTriggered = false;
+      video.addEventListener('error', () => {
+        if (vodErrorTriggered || !mountedRef.current) return;
+        vodErrorTriggered = true;
+        console.log('Direct VOD failed, trying mpegts');
+        // Try mpegts for .ts container
+        tryMpegTs(baseUrl + '.ts');
+      }, { once: true });
       video.play().catch(() => {});
+      // VOD timeout
+      retryTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        if (video.readyState < 2 && !vodErrorTriggered) {
+          vodErrorTriggered = true;
+          tryMpegTs(baseUrl + '.ts');
+        }
+      }, 10000);
     }
 
     return () => {
       cleanup();
-      video.src = '';
+      if (video) video.src = '';
     };
   }, [url]);
+
+  const handleFullscreen = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.requestFullscreen) video.requestFullscreen();
+    else if (video.webkitRequestFullscreen) video.webkitRequestFullscreen();
+  };
 
   if (inline) {
     return (
       <div className="inline-player">
-        {loading && !error && <div className="inline-player-loading">Connecting...</div>}
+        {loading && !error && <div className="inline-player-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="inline-player-error">{error}</div>}
-        <video ref={videoRef} className="inline-video-element" controls autoPlay />
+        <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline />
+        {!loading && !error && (
+          <div className="inline-player-controls">
+            <button className="fullscreen-btn" onClick={handleFullscreen} title="Fullscreen">&#x26F6;</button>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="video-player-overlay">
-      <div className="video-player-header">
-        <button className="video-close-btn" onClick={onClose}>&#10005;</button>
-        <span className="video-title">{title || 'Playing'}</span>
+    <div className="video-player-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
+      <div className="video-player-container">
+        <div className="video-player-header">
+          <span className="video-title">{title || 'Playing'}</span>
+          <div className="video-header-actions">
+            <button className="video-fullscreen-btn" onClick={handleFullscreen} title="Fullscreen">&#x26F6;</button>
+            <button className="video-close-btn" onClick={onClose}>&#10005;</button>
+          </div>
+        </div>
+        {loading && !error && <div className="video-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
+        {error && <div className="video-error">{error}</div>}
+        <video ref={videoRef} className="video-element" controls autoPlay playsInline />
       </div>
-      {loading && !error && <div className="video-loading">Connecting to stream...</div>}
-      {error && <div className="video-error">{error}</div>}
-      <video ref={videoRef} className="video-element" controls autoPlay />
     </div>
   );
 }
