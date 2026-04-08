@@ -495,8 +495,9 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
 }
 .media-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 12px 36px rgba(124,58,237,0.25), 0 4px 12px rgba(0,0,0,0.15);
+  transform: translateY(-8px) scale(1.08);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.3), 0 0 20px rgba(124,58,237,0.2);
+  z-index: 9;
 }
 .media-poster {
   width: 100%; aspect-ratio: 2/3;
