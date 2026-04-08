@@ -472,10 +472,14 @@ function VideoPlayer({ url, onClose, title, inline }) {
         url: streamUrl,
       }, {
         enableWorker: true,
-        lazyLoadMaxDuration: isLive ? 60 : 300,
+        enableStashBuffer: false,
+        stashInitialSize: 128,
+        lazyLoad: false,
+        lazyLoadMaxDuration: isLive ? 30 : 300,
         liveBufferLatencyChasing: isLive,
-        liveBufferLatencyMaxLatency: isLive ? 8 : 60,
-        liveBufferLatencyMinRemain: isLive ? 2 : 5,
+        liveBufferLatencyMaxLatency: isLive ? 3 : 60,
+        liveBufferLatencyMinRemain: isLive ? 0.5 : 3,
+        liveSyncTargetLatency: isLive ? 1.5 : undefined,
         autoCleanupSourceBuffer: true,
         autoCleanupMaxBackwardDuration: 30,
         autoCleanupMinBackwardDuration: 15,
@@ -962,24 +966,21 @@ function MediaScreen({ type, onBack, api }) {
     return list;
   }, [allItems, searchQuery, showFavsOnly, favs, sortBy]);
 
-  // Pagination - show items in batches of 40
-  const BATCH_SIZE = 40;
-  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  // Page-based pagination (20 per page)
+  const PAGE_SIZE = 20;
+  const [currentPage, setCurrentPage] = useState(0);
   const gridRef = useRef(null);
 
-  // Reset visible count when category or search changes
-  useEffect(() => { setVisibleCount(BATCH_SIZE); }, [selectedCategory, searchQuery]);
+  // Reset page when category or search changes
+  useEffect(() => { setCurrentPage(0); }, [selectedCategory, searchQuery]);
 
-  const visibleItems = filtered.slice(0, visibleCount);
-  const hasMore = visibleCount < filtered.length;
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const visibleItems = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
-  const handleScroll = useCallback(() => {
-    if (!gridRef.current || !hasMore) return;
-    const el = gridRef.current;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-      setVisibleCount(prev => Math.min(prev + BATCH_SIZE, filtered.length));
-    }
-  }, [hasMore, filtered.length]);
+  const goToPage = (page) => {
+    setCurrentPage(page);
+    if (gridRef.current) gridRef.current.scrollTop = 0;
+  };
 
   // Handle series click - fetch seasons/episodes
   const handleSeriesClick = async (item) => {
@@ -1129,7 +1130,7 @@ function MediaScreen({ type, onBack, api }) {
           </div>
         </div>
 
-        <div className="section-media-grid" ref={gridRef} onScroll={handleScroll}>
+        <div className="section-media-grid" ref={gridRef}>
           {(loading || itemsLoading) && <div className="loading-indicator">Loading {title.toLowerCase()}...</div>}
           {!loading && !itemsLoading && visibleItems.map(item => {
             const posterUrl = item.stream_icon || item.cover || '';
@@ -1146,7 +1147,7 @@ function MediaScreen({ type, onBack, api }) {
                   }
                 }}>
                 <div className="media-poster"
-                  style={posterUrl ? { backgroundImage: `url(${posterUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+                  style={posterUrl ? { backgroundImage: `url(${posterUrl})`, backgroundSize: 'cover', backgroundPosition: 'center top' } : {}}
                 >
                   {!posterUrl && <span className="media-poster-letter">{itemName.charAt(0)}</span>}
                   <div className="media-play-overlay">&#9654;</div>
@@ -1163,7 +1164,28 @@ function MediaScreen({ type, onBack, api }) {
               </div>
             );
           })}
-          {hasMore && <div className="loading-indicator" style={{gridColumn: '1 / -1'}}>Showing {visibleCount} of {filtered.length} - scroll for more</div>}
+          {/* Pagination controls */}
+          {!loading && !itemsLoading && filtered.length > 0 && (
+            <div className="media-pagination" style={{gridColumn: '1 / -1'}}>
+              <button className="media-page-btn" disabled={currentPage === 0} onClick={() => goToPage(currentPage - 1)}>&#8592; Prev</button>
+              <div className="media-page-numbers">
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  let page;
+                  if (totalPages <= 7) page = i;
+                  else if (currentPage < 4) page = i;
+                  else if (currentPage >= totalPages - 4) page = totalPages - 7 + i;
+                  else page = currentPage - 3 + i;
+                  return (
+                    <button key={page} className={`media-page-num ${currentPage === page ? 'active' : ''}`} onClick={() => goToPage(page)}>
+                      {page + 1}
+                    </button>
+                  );
+                })}
+              </div>
+              <button className="media-page-btn" disabled={currentPage >= totalPages - 1} onClick={() => goToPage(currentPage + 1)}>Next &#8594;</button>
+              <span className="media-page-info">{filtered.length} titles</span>
+            </div>
+          )}
         </div>
       </div>
 
