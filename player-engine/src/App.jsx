@@ -1,9 +1,38 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { mockData } from './services/xtreamApi';
 import axios from 'axios';
 import mpegts from 'mpegts.js';
 import Hls from 'hls.js';
 import './styles.css';
+
+/* ── Favorites helper (persisted in localStorage) ── */
+function getFavorites(type) {
+  try { return JSON.parse(localStorage.getItem(`dash_fav_${type}`) || '[]'); } catch { return []; }
+}
+function setFavorites(type, items) {
+  localStorage.setItem(`dash_fav_${type}`, JSON.stringify(items));
+}
+function toggleFavorite(type, id) {
+  const favs = getFavorites(type);
+  const idx = favs.indexOf(id);
+  if (idx >= 0) favs.splice(idx, 1); else favs.push(id);
+  setFavorites(type, favs);
+  return favs;
+}
+function isFavorite(type, id) {
+  return getFavorites(type).includes(id);
+}
+
+/* ── Watch history helper ── */
+function getWatchHistory() {
+  try { return JSON.parse(localStorage.getItem('dash_history') || '[]'); } catch { return []; }
+}
+function addToHistory(item) {
+  const hist = getWatchHistory().filter(h => h.id !== item.id);
+  hist.unshift({ ...item, watchedAt: Date.now() });
+  if (hist.length > 50) hist.length = 50; // keep last 50
+  localStorage.setItem('dash_history', JSON.stringify(hist));
+}
 
 /* ── Xtream API helper ── */
 function createXtreamApi(url, username, password) {
@@ -285,6 +314,7 @@ function HomeScreen({ onNavigate, credentials, playerLicense }) {
           <div className="home-clock-date">{formatDate(time)}</div>
         </div>
         <div className="home-topbar-actions">
+          <button className="home-search-btn" onClick={() => onNavigate('search')}>&#128269; Search</button>
         </div>
       </div>
 
@@ -637,6 +667,9 @@ function LiveTVScreen({ onBack, api }) {
   const [epgData, setEpgData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [channelLoading, setChannelLoading] = useState(false);
+  const [favs, setFavs] = useState(() => getFavorites('live'));
+  const [showFavsOnly, setShowFavsOnly] = useState(false);
+  const [sortBy, setSortBy] = useState('default'); // default, name, num
 
   // Load categories on mount
   useEffect(() => {
@@ -679,10 +712,21 @@ function LiveTVScreen({ onBack, api }) {
     return () => { cancelled = true; };
   }, [selectedCategory, api]);
 
-  const filtered = channels.filter(ch => {
-    const matchSearch = !searchQuery || ch.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSearch;
-  });
+  const filtered = useMemo(() => {
+    let list = channels.filter(ch => {
+      const matchSearch = !searchQuery || ch.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchFav = !showFavsOnly || favs.includes(ch.stream_id);
+      return matchSearch && matchFav;
+    });
+    if (sortBy === 'name') list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    else if (sortBy === 'num') list = [...list].sort((a, b) => (a.num || a.stream_id) - (b.num || b.stream_id));
+    return list;
+  }, [channels, searchQuery, showFavsOnly, favs, sortBy]);
+
+  const handleToggleFav = (e, streamId) => {
+    e.stopPropagation();
+    setFavs(toggleFavorite('live', streamId));
+  };
 
   useEffect(() => {
     if (selectedChannel) {
@@ -720,6 +764,12 @@ function LiveTVScreen({ onBack, api }) {
         <button className="back-btn" onClick={onBack}>&#8592; Home</button>
         <h1 className="section-title">Live TV</h1>
         <div className="section-header-right">
+          <button className={`header-filter-btn ${showFavsOnly ? 'active' : ''}`} onClick={() => setShowFavsOnly(!showFavsOnly)} title="Favorites only">&#9733;</button>
+          <select className="header-sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+            <option value="default">Default</option>
+            <option value="name">A-Z</option>
+            <option value="num">By Number</option>
+          </select>
           <span className="channel-count">{filtered.length} channels</span>
         </div>
       </div>
@@ -750,7 +800,10 @@ function LiveTVScreen({ onBack, api }) {
               <div
                 key={ch.stream_id}
                 className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
-                onClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); }}
+                onClick={() => {
+                  setSelectedChannel(ch); setPlayingChannel(ch);
+                  addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon });
+                }}
               >
                 <span className="ch-num">{ch.num || ch.stream_id}</span>
                 {ch.stream_icon ? (
@@ -761,6 +814,7 @@ function LiveTVScreen({ onBack, api }) {
                   <div className="ch-name">{ch.name}</div>
                   <div className="ch-prog">{ch.epg_channel_id || ''}</div>
                 </div>
+                <button className={`ch-fav-btn ${favs.includes(ch.stream_id) ? 'active' : ''}`} onClick={(e) => handleToggleFav(e, ch.stream_id)} title="Favorite">&#9733;</button>
                 <button className="ch-play-btn" onClick={(e) => { e.stopPropagation(); setSelectedChannel(ch); setPlayingChannel(ch); }} title="Play">&#9654;</button>
                 {selectedChannel?.stream_id === ch.stream_id && <div className="ch-live-dot" />}
               </div>
@@ -844,6 +898,15 @@ function MediaScreen({ type, onBack, api }) {
   const [activeSeason, setActiveSeason] = useState(null);
   const [epPage, setEpPage] = useState(0);
   const EP_PER_PAGE = 20;
+  const favType = isVod ? 'vod' : 'series';
+  const [favs, setFavs] = useState(() => getFavorites(favType));
+  const [showFavsOnly, setShowFavsOnly] = useState(false);
+  const [sortBy, setSortBy] = useState('default'); // default, name, rating
+
+  const handleToggleFav = (e, itemId) => {
+    e.stopPropagation();
+    setFavs(toggleFavorite(favType, itemId));
+  };
 
   // Load categories on mount
   useEffect(() => {
@@ -887,10 +950,17 @@ function MediaScreen({ type, onBack, api }) {
     return () => { cancelled = true; };
   }, [selectedCategory, api, type]);
 
-  const filtered = allItems.filter(item => {
-    const matchSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSearch;
-  });
+  const filtered = useMemo(() => {
+    const itemId = (i) => i.stream_id || i.series_id;
+    let list = allItems.filter(item => {
+      const matchSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchFav = !showFavsOnly || favs.includes(itemId(item));
+      return matchSearch && matchFav;
+    });
+    if (sortBy === 'name') list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    else if (sortBy === 'rating') list = [...list].sort((a, b) => parseFloat(b.rating || 0) - parseFloat(a.rating || 0));
+    return list;
+  }, [allItems, searchQuery, showFavsOnly, favs, sortBy]);
 
   // Pagination - show items in batches of 40
   const BATCH_SIZE = 40;
@@ -1031,6 +1101,12 @@ function MediaScreen({ type, onBack, api }) {
         <button className="back-btn" onClick={onBack}>&#8592; Home</button>
         <h1 className="section-title">{title}</h1>
         <div className="section-header-right">
+          <button className={`header-filter-btn ${showFavsOnly ? 'active' : ''}`} onClick={() => setShowFavsOnly(!showFavsOnly)} title="Favorites only">&#9733;</button>
+          <select className="header-sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+            <option value="default">Default</option>
+            <option value="name">A-Z</option>
+            <option value="rating">Rating</option>
+          </select>
           <span className="channel-count">{filtered.length} titles</span>
         </div>
       </div>
@@ -1058,14 +1134,23 @@ function MediaScreen({ type, onBack, api }) {
           {!loading && !itemsLoading && visibleItems.map(item => {
             const posterUrl = item.stream_icon || item.cover || '';
             const itemName = item.name || item.title || '?';
+            const itemId = item.stream_id || item.series_id;
             return (
-              <div key={item.stream_id || item.series_id} className="media-card"
-                onClick={() => isVod ? setPlayingItem(item) : handleSeriesClick(item)}>
+              <div key={itemId} className="media-card"
+                onClick={() => {
+                  if (isVod) {
+                    setPlayingItem(item);
+                    addToHistory({ id: `vod_${item.stream_id}`, name: item.name, type: 'vod', streamId: item.stream_id, icon: posterUrl });
+                  } else {
+                    handleSeriesClick(item);
+                  }
+                }}>
                 <div className="media-poster"
                   style={posterUrl ? { backgroundImage: `url(${posterUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
                 >
                   {!posterUrl && <span className="media-poster-letter">{itemName.charAt(0)}</span>}
                   <div className="media-play-overlay">&#9654;</div>
+                  <button className={`media-fav-btn ${favs.includes(itemId) ? 'active' : ''}`} onClick={(e) => handleToggleFav(e, itemId)}>&#9733;</button>
                 </div>
                 <div className="media-info">
                   <div className="media-title">{itemName}</div>
@@ -1589,6 +1674,271 @@ function TrialExpiredScreen() {
   );
 }
 
+/* ── FAVORITES SCREEN ── */
+function FavoritesScreen({ onBack, api }) {
+  const [activeTab, setActiveTab] = useState('live');
+  const [playingItem, setPlayingItem] = useState(null);
+  const history = getWatchHistory();
+
+  const tabs = [
+    { id: 'live', label: 'Live TV', icon: '&#128250;' },
+    { id: 'vod', label: 'Movies', icon: '&#127910;' },
+    { id: 'series', label: 'Series', icon: '&#127916;' },
+    { id: 'history', label: 'Recently Watched', icon: '&#128340;' },
+  ];
+
+  const liveFavs = getFavorites('live');
+  const vodFavs = getFavorites('vod');
+  const seriesFavs = getFavorites('series');
+
+  return (
+    <div className="section-screen">
+      <div className="section-header">
+        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <h1 className="section-title">Favorites</h1>
+      </div>
+      <div className="section-body">
+        <div className="section-sidebar">
+          <div className="sidebar-categories" style={{ paddingTop: 12 }}>
+            {tabs.map(tab => (
+              <div key={tab.id} className={`sidebar-cat-item ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}>
+                <span dangerouslySetInnerHTML={{ __html: tab.icon + ' ' + tab.label }} />
+                <span className="sidebar-cat-count">
+                  {tab.id === 'live' ? liveFavs.length : tab.id === 'vod' ? vodFavs.length : tab.id === 'series' ? seriesFavs.length : history.length}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="favorites-content">
+          {activeTab === 'history' ? (
+            history.length === 0 ? (
+              <div className="epg-empty"><div style={{ fontSize: 48 }}>&#128340;</div><p>No watch history yet</p></div>
+            ) : (
+              <div className="history-list">
+                {history.map(item => (
+                  <div key={item.id} className="history-item" onClick={() => {
+                    if (item.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(item.streamId, 'ts'), name: item.name });
+                    else if (item.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(item.streamId, 'mp4'), name: item.name });
+                  }}>
+                    {item.icon ? <img className="history-icon" src={item.icon} alt="" onError={e => e.target.style.display='none'} /> : null}
+                    <div className="history-info">
+                      <div className="history-name">{item.name}</div>
+                      <div className="history-meta">{item.type === 'live' ? 'Live TV' : item.type === 'vod' ? 'Movie' : 'Series'} - {new Date(item.watchedAt).toLocaleDateString()}</div>
+                    </div>
+                    <span className="ep-play">&#9654;</span>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="epg-empty">
+              <div style={{ fontSize: 48 }}>&#9733;</div>
+              <p>{activeTab === 'live' ? `${liveFavs.length} favorite channels` : activeTab === 'vod' ? `${vodFavs.length} favorite movies` : `${seriesFavs.length} favorite series`}</p>
+              <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>Add favorites from the {activeTab === 'live' ? 'Live TV' : activeTab === 'vod' ? 'Movies' : 'Series'} section using the star button</p>
+            </div>
+          )}
+        </div>
+      </div>
+      {playingItem && (
+        <VideoPlayer url={playingItem.url} title={playingItem.name} onClose={() => setPlayingItem(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ── CATCH UP SCREEN ── */
+function CatchUpScreen({ onBack, api }) {
+  const [categories, setCategories] = useState([]);
+  const [channels, setChannels] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [channelLoading, setChannelLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    const fetchCats = async () => {
+      setLoading(true);
+      const cats = await api.getLiveCategories();
+      if (!cancelled && cats && Array.isArray(cats) && cats.length > 0) {
+        setCategories(cats);
+        setSelectedCategory(cats[0].category_id);
+      }
+      if (!cancelled) setLoading(false);
+    };
+    fetchCats();
+    return () => { cancelled = true; };
+  }, [api]);
+
+  useEffect(() => {
+    if (!selectedCategory || !api) return;
+    let cancelled = false;
+    const fetchStreams = async () => {
+      setChannelLoading(true);
+      const streams = await api.getLiveStreams(selectedCategory);
+      if (!cancelled && streams && Array.isArray(streams)) {
+        // Filter channels that support catch-up (tv_archive = 1)
+        setChannels(streams.filter(s => s.tv_archive === 1 || s.tv_archive === '1'));
+      }
+      if (!cancelled) setChannelLoading(false);
+    };
+    fetchStreams();
+    return () => { cancelled = true; };
+  }, [selectedCategory, api]);
+
+  const filtered = channels.filter(ch => !searchQuery || ch.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  return (
+    <div className="section-screen">
+      <div className="section-header">
+        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <h1 className="section-title">Catch Up TV</h1>
+        <div className="section-header-right">
+          <span className="channel-count">{filtered.length} channels with catch-up</span>
+        </div>
+      </div>
+      <div className="section-body">
+        <div className="section-sidebar">
+          <div className="sidebar-search">
+            <input placeholder="Search catch-up..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          </div>
+          <div className="sidebar-categories">
+            {categories.map(cat => (
+              <div key={cat.category_id} className={`sidebar-cat-item ${String(selectedCategory) === String(cat.category_id) ? 'active' : ''}`}
+                onClick={() => setSelectedCategory(cat.category_id)}>
+                <span>{cat.category_name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="section-channel-list">
+          {(loading || channelLoading) && <div className="loading-indicator">Loading catch-up channels...</div>}
+          {!loading && !channelLoading && filtered.length === 0 && (
+            <div className="epg-empty"><div style={{ fontSize: 48 }}>&#9202;</div><p>No catch-up channels in this category</p></div>
+          )}
+          {!loading && !channelLoading && filtered.map(ch => (
+            <div key={ch.stream_id} className="ch-item">
+              {ch.stream_icon ? <img className="ch-icon-img" src={ch.stream_icon} alt="" onError={e => e.target.style.display='none'} /> : null}
+              <div className="ch-icon" style={ch.stream_icon ? { display: 'none' } : {}}>{(ch.name || '?').charAt(0)}</div>
+              <div className="ch-info">
+                <div className="ch-name">{ch.name}</div>
+                <div className="ch-prog">Archive: {ch.tv_archive_duration || '?'} days</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── SEARCH SCREEN (Global search across all content) ── */
+function SearchScreen({ onBack, api }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState({ live: [], vod: [], series: [] });
+  const [searching, setSearching] = useState(false);
+  const [playingItem, setPlayingItem] = useState(null);
+  const searchTimeout = useRef(null);
+
+  const doSearch = useCallback(async (q) => {
+    if (!q || q.length < 2 || !api) { setResults({ live: [], vod: [], series: [] }); return; }
+    setSearching(true);
+    const [live, vod, series] = await Promise.all([
+      api.getLiveStreams(),
+      api.getVodStreams(),
+      api.getSeries(),
+    ]);
+    const lq = q.toLowerCase();
+    setResults({
+      live: (live || []).filter(c => c.name?.toLowerCase().includes(lq)).slice(0, 20),
+      vod: (vod || []).filter(v => v.name?.toLowerCase().includes(lq)).slice(0, 20),
+      series: (series || []).filter(s => s.name?.toLowerCase().includes(lq)).slice(0, 20),
+    });
+    setSearching(false);
+  }, [api]);
+
+  const handleInput = (val) => {
+    setQuery(val);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => doSearch(val), 500);
+  };
+
+  const totalResults = results.live.length + results.vod.length + results.series.length;
+
+  return (
+    <div className="section-screen">
+      <div className="section-header">
+        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <h1 className="section-title">Search</h1>
+      </div>
+      <div className="search-screen-body">
+        <div className="search-input-bar">
+          <input className="search-global-input" placeholder="Search channels, movies, series..." value={query} onChange={e => handleInput(e.target.value)} autoFocus />
+        </div>
+        {searching && <div className="loading-indicator">Searching...</div>}
+        {!searching && query.length >= 2 && totalResults === 0 && (
+          <div className="epg-empty"><div style={{ fontSize: 48 }}>&#128269;</div><p>No results for "{query}"</p></div>
+        )}
+        {!searching && totalResults > 0 && (
+          <div className="search-results">
+            {results.live.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title">Live TV ({results.live.length})</h3>
+                <div className="search-items">
+                  {results.live.map(ch => (
+                    <div key={ch.stream_id} className="search-result-item" onClick={() => {
+                      if (api) setPlayingItem({ url: api.getLiveUrl(ch.stream_id, 'ts'), name: ch.name });
+                      addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon });
+                    }}>
+                      {ch.stream_icon ? <img className="search-result-icon" src={ch.stream_icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="search-result-letter">{ch.name?.charAt(0)}</div>}
+                      <div className="search-result-info"><div className="search-result-name">{ch.name}</div><div className="search-result-type">Live TV</div></div>
+                      <span className="ep-play">&#9654;</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {results.vod.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title">Movies ({results.vod.length})</h3>
+                <div className="search-items">
+                  {results.vod.map(item => (
+                    <div key={item.stream_id} className="search-result-item" onClick={() => {
+                      if (api) setPlayingItem({ url: api.getVodUrl(item.stream_id, item.container_extension || 'mp4'), name: item.name });
+                      addToHistory({ id: `vod_${item.stream_id}`, name: item.name, type: 'vod', streamId: item.stream_id, icon: item.stream_icon });
+                    }}>
+                      {item.stream_icon ? <img className="search-result-icon" src={item.stream_icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="search-result-letter">{item.name?.charAt(0)}</div>}
+                      <div className="search-result-info"><div className="search-result-name">{item.name}</div><div className="search-result-type">Movie {item.rating && item.rating !== '0' ? `- ★ ${item.rating}` : ''}</div></div>
+                      <span className="ep-play">&#9654;</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {results.series.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title">Series ({results.series.length})</h3>
+                <div className="search-items">
+                  {results.series.map(item => (
+                    <div key={item.series_id} className="search-result-item">
+                      {item.cover ? <img className="search-result-icon" src={item.cover} alt="" onError={e => e.target.style.display='none'} /> : <div className="search-result-letter">{item.name?.charAt(0)}</div>}
+                      <div className="search-result-info"><div className="search-result-name">{item.name}</div><div className="search-result-type">Series {item.rating && item.rating !== '0' ? `- ★ ${item.rating}` : ''}</div></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {playingItem && <VideoPlayer url={playingItem.url} title={playingItem.name} onClose={() => setPlayingItem(null)} />}
+    </div>
+  );
+}
+
 /* ── Player license helper ── */
 function getPlayerLicense() {
   // In production: fetched from admin panel API during device auth
@@ -1633,11 +1983,7 @@ export default function App() {
     return <TrialExpiredScreen />;
   }
 
-  const handleNavigate = (section) => {
-    if (['live', 'vod', 'series', 'radio', 'settings'].includes(section)) {
-      setScreen(section);
-    }
-  };
+  const handleNavigate = (section) => setScreen(section);
 
   switch (screen) {
     case 'live':
@@ -1650,6 +1996,12 @@ export default function App() {
       return <RadioScreen onBack={() => setScreen('home')} />;
     case 'settings':
       return <SettingsScreen onBack={() => setScreen('home')} api={api} />;
+    case 'favorites':
+      return <FavoritesScreen onBack={() => setScreen('home')} api={api} onNavigate={handleNavigate} />;
+    case 'catchup':
+      return <CatchUpScreen onBack={() => setScreen('home')} api={api} />;
+    case 'search':
+      return <SearchScreen onBack={() => setScreen('home')} api={api} />;
     default:
       return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} />;
   }
