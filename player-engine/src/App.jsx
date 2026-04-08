@@ -1136,6 +1136,7 @@ function MediaScreen({ type, onBack, api }) {
             const posterUrl = item.stream_icon || item.cover || '';
             const itemName = item.name || item.title || '?';
             const itemId = item.stream_id || item.series_id;
+            const catName = categories.find(c => String(c.category_id) === String(item.category_id))?.category_name || '';
             return (
               <div key={itemId} className="media-card"
                 onClick={() => {
@@ -1150,16 +1151,22 @@ function MediaScreen({ type, onBack, api }) {
                   style={posterUrl ? { backgroundImage: `url(${posterUrl})`, backgroundSize: 'cover', backgroundPosition: 'center top' } : {}}
                 >
                   {!posterUrl && <span className="media-poster-letter">{itemName.charAt(0)}</span>}
-                  <div className="media-play-overlay">&#9654;</div>
-                  <button className={`media-fav-btn ${favs.includes(itemId) ? 'active' : ''}`} onClick={(e) => handleToggleFav(e, itemId)}>&#9733;</button>
                 </div>
-                <div className="media-info">
-                  <div className="media-title">{itemName}</div>
-                  {item.rating && item.rating !== '0' && String(item.rating) !== '0' && (
-                    <div className="media-rating">
-                      <span className="media-star">&#9733;</span> {item.rating}
-                    </div>
-                  )}
+                {/* Rating badge */}
+                {item.rating && item.rating !== '0' && String(item.rating) !== '0' && (
+                  <div className="media-card-rating">&#9733; {item.rating}</div>
+                )}
+                {/* Favorite button */}
+                <button className={`media-fav-btn ${favs.includes(itemId) ? 'active' : ''}`} onClick={(e) => handleToggleFav(e, itemId)}>&#9733;</button>
+                {/* Play button */}
+                <div className="media-play-overlay">&#9654;</div>
+                {/* Caption overlay with animated borders */}
+                <div className="media-caption">
+                  <div className="media-caption-inner">
+                    <div className="media-caption-lines" />
+                    <div className="media-card-title">{itemName}</div>
+                    {catName && <span className="media-card-category">{catName}</span>}
+                  </div>
                 </div>
               </div>
             );

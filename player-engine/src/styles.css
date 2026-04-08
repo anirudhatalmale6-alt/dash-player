@@ -483,51 +483,148 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   margin: 12px 12px 12px 10px; background: white; border-radius: 22px;
   border: 1px solid rgba(124,58,237,0.06);
   box-shadow: 0 8px 32px rgba(124,58,237,0.08), 0 2px 8px rgba(0,0,0,0.03);
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 18px; align-content: start;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px; align-content: start;
 }
+
+/* ── Poster Card (inspired by snip1387 hover effect) ── */
 .media-card {
-  border-radius: 14px; overflow: hidden; cursor: pointer;
-  background: linear-gradient(160deg, #f8f6ff, #f0ecff, #ebe5ff);
-  border: 1px solid rgba(124,58,237,0.06);
-  transition: all 0.25s;
-  box-shadow: 0 4px 16px rgba(124,58,237,0.06), 0 1px 4px rgba(0,0,0,0.03),
-              inset 0 1px 0 rgba(255,255,255,0.7);
+  position: relative; overflow: hidden; cursor: pointer;
+  border-radius: 10px; background: #0a0a14;
+  transition: all 0.4s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
 }
 .media-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 28px rgba(124,58,237,0.12), 0 2px 8px rgba(0,0,0,0.04);
-  border-color: rgba(124,58,237,0.12);
+  transform: translateY(-6px);
+  box-shadow: 0 12px 36px rgba(124,58,237,0.25), 0 4px 12px rgba(0,0,0,0.15);
 }
 .media-poster {
   width: 100%; aspect-ratio: 2/3;
-  background: linear-gradient(160deg, #f3eeff, #ece5ff, #e5dcff);
+  background: linear-gradient(160deg, #1a1030, #0d0820);
   display: flex; align-items: center; justify-content: center;
   position: relative; overflow: hidden;
-  border-radius: 14px 14px 0 0;
+}
+.media-poster img, .media-poster-bg {
+  width: 100%; height: 100%; object-fit: cover;
+  transition: all 0.55s ease;
+}
+.media-card:hover .media-poster {
+  filter: brightness(0.5);
 }
 .media-poster-letter {
-  font-size: 36px; color: var(--purple-lighter); font-weight: 700;
+  font-size: 42px; color: var(--purple-lighter); font-weight: 700;
+  z-index: 1;
 }
+
+/* Caption overlay with animated border lines */
+.media-caption {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding: 14px;
+  z-index: 2;
+}
+.media-caption-inner {
+  position: relative; padding: 10px 12px;
+}
+/* Animated border lines on hover */
+.media-caption-inner::before,
+.media-caption-inner::after {
+  content: ''; position: absolute;
+  background: rgba(255,255,255,0.7);
+  transition: transform 0.55s ease;
+}
+.media-caption-inner::before {
+  top: 0; left: 0; right: 0; height: 1px;
+  transform: translateX(101%);
+}
+.media-caption-inner::after {
+  bottom: 0; left: 0; right: 0; height: 1px;
+  transform: translateX(-101%);
+}
+.media-caption-lines {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+}
+.media-caption-lines::before,
+.media-caption-lines::after {
+  content: ''; position: absolute;
+  background: rgba(255,255,255,0.7);
+  transition: transform 0.55s ease;
+}
+.media-caption-lines::before {
+  top: 0; left: 0; bottom: 0; width: 1px;
+  transform: translateY(101%);
+}
+.media-caption-lines::after {
+  top: 0; right: 0; bottom: 0; width: 1px;
+  transform: translateY(-101%);
+}
+.media-card:hover .media-caption-inner::before,
+.media-card:hover .media-caption-inner::after {
+  transform: translateX(0);
+}
+.media-card:hover .media-caption-lines::before,
+.media-card:hover .media-caption-lines::after {
+  transform: translateY(0);
+}
+
+.media-card-title {
+  font-size: 13px; font-weight: 600; color: white;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transform: translateY(8px);
+  transition: all 0.4s ease 0.1s;
+}
+.media-card-category {
+  display: inline-block; margin-top: 6px;
+  padding: 3px 8px; border-radius: 3px;
+  background: linear-gradient(135deg, var(--purple), var(--purple-dark));
+  color: white; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  opacity: 0; transform: translateY(8px);
+  transition: all 0.4s ease 0.2s;
+}
+.media-card-rating {
+  position: absolute; top: 10px; right: 10px;
+  padding: 3px 7px; border-radius: 4px;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  color: #fbbf24; font-size: 11px; font-weight: 600;
+  display: flex; align-items: center; gap: 3px;
+  z-index: 3;
+}
+.media-card:hover .media-card-title,
+.media-card:hover .media-card-category {
+  opacity: 1; transform: translateY(0);
+}
+
+/* Play button overlay */
 .media-play-overlay {
-  position: absolute; inset: 0;
-  background: rgba(0,0,0,0.4); display: flex;
-  align-items: center; justify-content: center;
-  font-size: 36px; color: white; opacity: 0;
-  transition: opacity 0.25s; cursor: pointer;
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(124,58,237,0.9);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: white; opacity: 0;
+  transition: all 0.35s ease; cursor: pointer;
+  z-index: 3; border: 2px solid rgba(255,255,255,0.3);
 }
-.media-card:hover .media-play-overlay { opacity: 1; }
+.media-card:hover .media-play-overlay {
+  opacity: 1; transform: translate(-50%, -50%) scale(1);
+}
+
+/* Bottom info bar removed - all info is in hover overlay now */
+.media-info { display: none; }
+
 .ep-play {
   color: var(--purple); font-size: 14px; flex-shrink: 0;
   opacity: 0.5; transition: opacity 0.2s;
 }
 .series-episode:hover .ep-play { opacity: 1; }
-.media-info { padding: 10px 12px; }
 .media-title {
   font-size: 13px; font-weight: 500; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.media-rating { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 12px; color: var(--text-sub); }
+.media-rating { display: none; }
 .media-star { color: #f59e0b; }
 
 /* Radio Grid - Glossy Card Style */
@@ -965,7 +1062,7 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 
 /* ══════ MEDIA FAVORITE BUTTON ══════ */
 .media-fav-btn {
-  position: absolute; top: 6px; right: 6px; z-index: 3;
+  position: absolute; top: 8px; left: 8px; z-index: 5;
   width: 28px; height: 28px; border-radius: 50%;
   background: rgba(0,0,0,0.5); border: none;
   color: rgba(255,255,255,0.6); font-size: 14px; cursor: pointer;
