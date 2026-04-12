@@ -11,6 +11,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Public API Routes (no auth required)
+app.use('/api', require('./routes/public'));
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/devices', authMiddleware, require('./routes/devices'));
