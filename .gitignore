@@ -6,3 +6,5 @@ dist/
 desktop/release/
 desktop/node_modules/
 resources/mpv/mpv.exe
+desktop/resources/ffmpeg/ffmpeg.exe
+desktop/resources/mpv/mpv.exe
