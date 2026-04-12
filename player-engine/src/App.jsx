@@ -1412,7 +1412,7 @@ function SettingsScreen({ onBack, api }) {
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Enable VPN</span>
                   <button
                     className={`settings-btn ${vpnEnabled ? 'settings-btn-danger' : 'settings-btn-primary'}`}
-                    onClick={() => { setVpnEnabled(!vpnEnabled); }}
+                    onClick={() => { const newVal = !vpnEnabled; setVpnEnabled(newVal); localStorage.setItem('dash_vpn_enabled', newVal.toString()); }}
                   >
                     {vpnEnabled ? 'Disable' : 'Enable'}
                   </button>
@@ -1844,6 +1844,24 @@ function SpeedTestScreen({ onBack }) {
   const [results, setResults] = useState(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  const [ipInfo, setIpInfo] = useState(null);
+
+  // Fetch IP info on mount
+  useEffect(() => {
+    fetch('https://ipinfo.io/json?token=', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setIpInfo(data))
+      .catch(() => {
+        // Fallback to ipapi
+        fetch('https://ipapi.co/json/', { cache: 'no-store' })
+          .then(r => r.json())
+          .then(data => setIpInfo({ ip: data.ip, hostname: data.org, city: data.city, region: data.region, country: data.country_name, org: data.org }))
+          .catch(() => {});
+      });
+  }, []);
+
+  const vpnEnabled = localStorage.getItem('dash_vpn_enabled') === 'true';
+  const vpnServer = localStorage.getItem('dash_vpn_server') || '';
 
   const runSpeedTest = async () => {
     setTesting(true); setResults(null); setProgress(0); setError('');
@@ -1959,6 +1977,38 @@ function SpeedTestScreen({ onBack }) {
             &#128260; Test Again
           </button>
         )}
+
+        {/* Connection Info */}
+        <div className="speedtest-connection-info">
+          <div className="speedtest-info-row">
+            <span className="speedtest-info-label">VPN Status</span>
+            <span className={`settings-badge ${vpnEnabled ? 'active' : 'inactive'}`}>
+              {vpnEnabled ? 'ENABLED' : 'DISABLED'}
+            </span>
+          </div>
+          {vpnEnabled && vpnServer && (
+            <div className="speedtest-info-row">
+              <span className="speedtest-info-label">VPN Server</span>
+              <span className="speedtest-info-value">{vpnServer}</span>
+            </div>
+          )}
+          <div className="speedtest-info-row">
+            <span className="speedtest-info-label">Your IP</span>
+            <span className="speedtest-info-value">{ipInfo ? ipInfo.ip : 'Loading...'}</span>
+          </div>
+          {ipInfo && ipInfo.hostname && (
+            <div className="speedtest-info-row">
+              <span className="speedtest-info-label">Hostname / ISP</span>
+              <span className="speedtest-info-value">{ipInfo.hostname || ipInfo.org || 'N/A'}</span>
+            </div>
+          )}
+          {ipInfo && (
+            <div className="speedtest-info-row">
+              <span className="speedtest-info-label">Location</span>
+              <span className="speedtest-info-value">{[ipInfo.city, ipInfo.region, ipInfo.country].filter(Boolean).join(', ')}</span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2537,29 +2587,51 @@ function EPGGridScreen({ onBack, api }) {
         const limited = streams.slice(0, 30);
         setChannels(limited);
         const epgMap = {};
+        // Deduplicate and sort EPG entries
+        const processEpg = (listings) => {
+          const mapped = listings.map((e, idx) => ({
+            id: e.id || idx,
+            title: e.title ? b64decode(e.title) : 'No Title',
+            description: e.description ? b64decode(e.description) : '',
+            start: e.start, end: e.end,
+          }));
+          // Sort by start time
+          mapped.sort((a, b) => new Date(a.start) - new Date(b.start));
+          // Deduplicate: remove entries with same start time
+          const seen = new Set();
+          const deduped = mapped.filter(p => {
+            const key = `${p.start}_${p.title}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          // Remove overlapping: if a program starts before previous ends, skip it
+          const clean = [];
+          for (const p of deduped) {
+            if (clean.length === 0) { clean.push(p); continue; }
+            const prev = clean[clean.length - 1];
+            if (new Date(p.start) >= new Date(prev.end)) {
+              clean.push(p);
+            } else if (new Date(p.start).getTime() === new Date(prev.start).getTime()) {
+              // Same start, keep longer one
+              if (new Date(p.end) > new Date(prev.end)) clean[clean.length - 1] = p;
+            }
+            // else skip overlapping program
+          }
+          return clean;
+        };
         // Fetch EPG in batches of 5 for performance
         for (let i = 0; i < limited.length; i += 5) {
           const batch = limited.slice(i, i + 5);
           await Promise.all(batch.map(async (ch) => {
             try {
-              // Try full EPG first, fall back to short EPG
               let data = await api.getFullEPG(ch.stream_id);
               if (data && data.epg_listings && data.epg_listings.length > 0) {
-                epgMap[ch.stream_id] = data.epg_listings.map((e, idx) => ({
-                  id: e.id || idx,
-                  title: e.title ? b64decode(e.title) : 'No Title',
-                  description: e.description ? b64decode(e.description) : '',
-                  start: e.start, end: e.end,
-                }));
+                epgMap[ch.stream_id] = processEpg(data.epg_listings);
               } else {
                 data = await api.getEPG(ch.stream_id);
                 if (data && data.epg_listings && data.epg_listings.length > 0) {
-                  epgMap[ch.stream_id] = data.epg_listings.map((e, idx) => ({
-                    id: e.id || idx,
-                    title: e.title ? b64decode(e.title) : 'No Title',
-                    description: e.description ? b64decode(e.description) : '',
-                    start: e.start, end: e.end,
-                  }));
+                  epgMap[ch.stream_id] = processEpg(data.epg_listings);
                 }
               }
             } catch (err) { /* skip channel */ }

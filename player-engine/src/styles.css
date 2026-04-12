@@ -1257,6 +1257,26 @@ body {
   font-weight: 500;
 }
 
+/* ═══ SPEED TEST CONNECTION INFO ═══ */
+.speedtest-connection-info {
+  width: 100%; max-width: 500px;
+  background: var(--bg-card); border: 1px solid var(--glass-border);
+  border-radius: 16px; padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 12px;
+  box-shadow: var(--shadow);
+}
+.speedtest-info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0;
+}
+.speedtest-info-label {
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
+}
+.speedtest-info-value {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
 /* ═══ PIN PROTECTION ═══ */
 .pin-overlay {
   position: fixed;
