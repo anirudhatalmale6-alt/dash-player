@@ -748,64 +748,102 @@ function LiveTVScreen({ onBack, api }) {
             ))}
           </div>
         </div>
-        <div className="section-channel-list">
-          {(loading || channelLoading) && <div className="loading-indicator">Loading channels...</div>}
-          {!loading && !channelLoading && filtered.map(ch => (
-            <div key={ch.stream_id} className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
-              onClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon }); }}>
-              <span className="ch-num">{ch.num || ch.stream_id}</span>
-              {ch.stream_icon ? <img className="ch-icon-img" src={ch.stream_icon} alt="" onError={e => { e.target.style.display = 'none'; if(e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} /> : null}
-              <div className="ch-icon" style={ch.stream_icon ? { display: 'none' } : {}}>{(ch.name || '?').charAt(0)}</div>
-              <div className="ch-info">
-                <div className="ch-name">{ch.name}</div>
-                <div className="ch-prog">{ch.epg_channel_id || ''}</div>
-              </div>
-              <button className={`ch-fav-btn ${favs.includes(ch.stream_id) ? 'active' : ''}`} onClick={(e) => handleToggleFav(e, ch.stream_id)} title="Favorite">&#9733;</button>
-              <button className="ch-play-btn" onClick={(e) => { e.stopPropagation(); setSelectedChannel(ch); setPlayingChannel(ch); }} title="Play">&#9654;</button>
-              {selectedChannel?.stream_id === ch.stream_id && <div className="ch-live-dot" />}
-            </div>
-          ))}
-        </div>
-        <div className="section-epg">
-          {selectedChannel ? (
-            <>
-              <div className="epg-top">
-                <div>
-                  <div className="epg-ch-name">{selectedChannel.name}</div>
-                  <div className="epg-ch-cat">{selectedChannel.category_name}</div>
+        {!playingChannel ? (
+          <>
+            <div className="section-channel-list">
+              {(loading || channelLoading) && <div className="loading-indicator">Loading channels...</div>}
+              {!loading && !channelLoading && filtered.map(ch => (
+                <div key={ch.stream_id} className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
+                  onClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon }); }}>
+                  <span className="ch-num">{ch.num || ch.stream_id}</span>
+                  {ch.stream_icon ? <img className="ch-icon-img" src={ch.stream_icon} alt="" onError={e => { e.target.style.display = 'none'; if(e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} /> : null}
+                  <div className="ch-icon" style={ch.stream_icon ? { display: 'none' } : {}}>{(ch.name || '?').charAt(0)}</div>
+                  <div className="ch-info">
+                    <div className="ch-name">{ch.name}</div>
+                    <div className="ch-prog">{ch.epg_channel_id || ''}</div>
+                  </div>
+                  <button className={`ch-fav-btn ${favs.includes(ch.stream_id) ? 'active' : ''}`} onClick={(e) => handleToggleFav(e, ch.stream_id)} title="Favorite">&#9733;</button>
+                  <button className="ch-play-btn" onClick={(e) => { e.stopPropagation(); setSelectedChannel(ch); setPlayingChannel(ch); }} title="Play">&#9654;</button>
+                  {selectedChannel?.stream_id === ch.stream_id && <div className="ch-live-dot" />}
                 </div>
-                {!playingChannel && <button className="epg-play-btn" onClick={() => setPlayingChannel(selectedChannel)}>&#9654; Play</button>}
-                {playingChannel && <button className="epg-play-btn" onClick={() => setPlayingChannel(null)} style={{background: 'linear-gradient(135deg, #ef4444, #dc2626)'}}>&#9632; Stop</button>}
-                <div className="epg-live-badge">LIVE</div>
-              </div>
-              {playingChannel && api && (
-                <div className="inline-player-container">
-                  <VideoPlayer url={api.getLiveUrl(playingChannel.stream_id, 'ts')} title={playingChannel.name} onClose={() => setPlayingChannel(null)} inline={true} />
+              ))}
+            </div>
+            <div className="section-epg">
+              {selectedChannel ? (
+                <>
+                  <div className="epg-top">
+                    <div>
+                      <div className="epg-ch-name">{selectedChannel.name}</div>
+                      <div className="epg-ch-cat">{selectedChannel.category_name}</div>
+                    </div>
+                    <button className="epg-play-btn" onClick={() => setPlayingChannel(selectedChannel)}>&#9654; Play</button>
+                    <div className="epg-live-badge">LIVE</div>
+                  </div>
+                  <div className="epg-programs">
+                    {epgData.map((prog, idx) => (
+                      <div key={prog.id} className={`epg-prog ${idx % 2 === 1 ? 'epg-purple' : ''} ${isCurrentProgram(prog) ? 'current' : ''} ${isPastProgram(prog) ? 'past' : ''}`}>
+                        <div className="epg-prog-time">{formatTime(prog.start)}</div>
+                        <div className="epg-prog-details">
+                          <div className="epg-prog-title">{prog.title}</div>
+                          <div className="epg-prog-desc">{prog.description}</div>
+                          {isCurrentProgram(prog) && (
+                            <div className="epg-prog-progress"><div className="epg-prog-bar" style={{ width: `${getProgress(prog)}%` }} /></div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {epgData.length === 0 && <div className="epg-empty"><p>No EPG data available for this channel</p></div>}
+                  </div>
+                </>
+              ) : (
+                <div className="epg-empty">
+                  <div style={{ fontSize: 48 }}>&#128250;</div>
+                  <p>Select a channel to view EPG</p>
                 </div>
               )}
-              <div className="epg-programs">
-                {epgData.map((prog, idx) => (
-                  <div key={prog.id} className={`epg-prog ${idx % 2 === 1 ? 'epg-purple' : ''} ${isCurrentProgram(prog) ? 'current' : ''} ${isPastProgram(prog) ? 'past' : ''}`}>
-                    <div className="epg-prog-time">{formatTime(prog.start)}</div>
-                    <div className="epg-prog-details">
-                      <div className="epg-prog-title">{prog.title}</div>
-                      <div className="epg-prog-desc">{prog.description}</div>
-                      {isCurrentProgram(prog) && (
-                        <div className="epg-prog-progress"><div className="epg-prog-bar" style={{ width: `${getProgress(prog)}%` }} /></div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {epgData.length === 0 && <div className="epg-empty"><p>No EPG data available for this channel</p></div>}
-              </div>
-            </>
-          ) : (
-            <div className="epg-empty">
-              <div style={{ fontSize: 48 }}>&#128250;</div>
-              <p>Select a channel to view EPG</p>
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          <div className="live-player-area">
+            <div className="live-player-main">
+              <div className="live-player-top">
+                <div className="live-player-info">
+                  <span className="live-player-channel-name">{playingChannel.name}</span>
+                  <span className="epg-live-badge">LIVE</span>
+                </div>
+                <div className="live-player-actions">
+                  <button className="back-btn" onClick={() => setPlayingChannel(null)}>&#9632; Stop</button>
+                </div>
+              </div>
+              <div className="live-player-video">
+                {api && <VideoPlayer url={api.getLiveUrl(playingChannel.stream_id, 'ts')} title={playingChannel.name} onClose={() => setPlayingChannel(null)} inline={true} />}
+              </div>
+              <div className="live-player-epg-bar">
+                {epgData.length > 0 ? epgData.filter(p => isCurrentProgram(p) || !isPastProgram(p)).slice(0, 4).map((prog, idx) => (
+                  <div key={prog.id} className={`live-epg-item ${isCurrentProgram(prog) ? 'current' : ''}`}>
+                    <span className="live-epg-time">{formatTime(prog.start)}</span>
+                    <span className="live-epg-title">{prog.title}</span>
+                    {isCurrentProgram(prog) && (
+                      <div className="epg-prog-progress" style={{ marginTop: 4 }}><div className="epg-prog-bar" style={{ width: `${getProgress(prog)}%` }} /></div>
+                    )}
+                  </div>
+                )) : <div className="live-epg-item"><span className="live-epg-title" style={{ opacity: 0.5 }}>No EPG data available</span></div>}
+              </div>
+            </div>
+            <div className="live-player-channels">
+              {filtered.slice(0, 50).map(ch => (
+                <div key={ch.stream_id} className={`ch-item ${playingChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
+                  onClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon }); }}>
+                  <span className="ch-num">{ch.num || ch.stream_id}</span>
+                  {ch.stream_icon ? <img className="ch-icon-img" src={ch.stream_icon} alt="" style={{ width: 28, height: 28 }} onError={e => { e.target.style.display = 'none'; }} /> : null}
+                  <div className="ch-info" style={{ minWidth: 0 }}>
+                    <div className="ch-name" style={{ fontSize: 11 }}>{ch.name}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
