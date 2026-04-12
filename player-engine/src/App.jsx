@@ -813,8 +813,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
       setupStallDetection();
     };
 
+    let triedMpegTs = false;
+    let triedHls = false;
+    let triedDirect = false;
+
     const tryMpegTs = (streamUrl) => {
-      if (!mpegts.isSupported()) return tryHls();
+      if (triedMpegTs || !mpegts.isSupported()) return triedHls ? tryDirect() : tryHls();
+      triedMpegTs = true;
       if (!mountedRef.current) return;
       setCurrentFormat('MPEG-TS');
       const player = mpegts.createPlayer({ type: 'mpegts', isLive, url: streamUrl }, {
@@ -835,19 +840,25 @@ function VideoPlayer({ url, onClose, title, inline }) {
         if (errorTriggered) return;
         errorTriggered = true;
         cleanup();
-        tryHls();
+        if (!triedHls) tryHls();
+        else tryDirect();
       });
       video.addEventListener('canplay', onPlaying, { once: true });
       video.addEventListener('playing', onPlaying, { once: true });
       setTimeout(() => { if (mountedRef.current && video) video.play().catch(() => {}); }, 300);
       retryTimerRef.current = setTimeout(() => {
         if (!mountedRef.current) return;
-        if (video.readyState < 2 && !errorTriggered) { errorTriggered = true; cleanup(); tryHls(); }
+        if (video.readyState < 2 && !errorTriggered) {
+          errorTriggered = true; cleanup();
+          if (!triedHls) tryHls();
+          else tryDirect();
+        }
       }, 10000);
     };
 
     const tryHls = () => {
-      if (!Hls.isSupported()) return isLive ? tryMpegTs(baseUrl + '.ts') : tryDirect();
+      if (triedHls || !Hls.isSupported()) return triedMpegTs ? tryDirect() : tryMpegTs(baseUrl + '.ts');
+      triedHls = true;
       if (!mountedRef.current) return;
       setCurrentFormat('HLS');
       const hlsUrl = baseUrl + '.m3u8';
@@ -869,7 +880,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal && !hlsErrorTriggered) {
           hlsErrorTriggered = true; cleanup();
-          if (isLive) tryMpegTs(baseUrl + '.ts');
+          if (!triedMpegTs && isLive) tryMpegTs(baseUrl + '.ts');
           else tryDirect();
         }
       });
@@ -877,13 +888,14 @@ function VideoPlayer({ url, onClose, title, inline }) {
         if (!mountedRef.current) return;
         if (video.readyState < 2 && !hlsErrorTriggered) {
           hlsErrorTriggered = true; cleanup();
-          if (isLive) tryMpegTs(baseUrl + '.ts');
+          if (!triedMpegTs && isLive) tryMpegTs(baseUrl + '.ts');
           else tryDirect();
         }
       }, 8000);
     };
 
     const tryDirect = () => {
+      triedDirect = true;
       if (!mountedRef.current) return;
       setCurrentFormat('Direct');
       video.src = url;
