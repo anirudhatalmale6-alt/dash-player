@@ -3046,6 +3046,9 @@ async function fetchPlayerLicense() {
     });
     const d = res.data?.device;
     if (!d) return null;
+    // Check if device is blocked/banned
+    if (d.status === 'blocked' || d.is_banned) return { type: 'blocked', expiresAt: null, trialDaysLeft: 0 };
+    if (d.status === 'expired') return { type: 'expired', expiresAt: d.license_expires_at, trialDaysLeft: 0 };
     const licType = d.license_type || 'trial';
     if (licType === 'unlimited') return { type: 'unlimited', expiresAt: null, trialDaysLeft: 0 };
     if (licType === 'yearly') {
@@ -3064,8 +3067,10 @@ async function fetchPlayerLicense() {
 }
 
 function getPlayerStatusText(license) {
+  if (license.type === 'blocked') return 'Blocked';
+  if (license.type === 'expired') return 'Expired';
   if (license.type === 'unlimited') return 'Unlimited';
-  if (license.type === 'yearly') return license.expiresAt;
+  if (license.type === 'yearly') return license.expiresAt ? `Expires ${license.expiresAt}` : 'Active';
   if (license.type === 'trial') {
     if (license.trialDaysLeft <= 0) return 'Expired';
     return `${license.trialDaysLeft} days left`;
@@ -3075,7 +3080,11 @@ function getPlayerStatusText(license) {
 
 /* ══════ MAIN APP ══════ */
 export default function App() {
-  const [credentials, setCredentials] = useState(null);
+  const [credentials, setCredentials] = useState(() => {
+    const defaultPl = getDefaultPlaylist();
+    if (defaultPl) return { url: defaultPl.server_url, username: defaultPl.username, password: defaultPl.password, output_format: defaultPl.output_format || 'm3u8' };
+    return null;
+  });
   const [screen, setScreen] = useState('home');
   const [playerLicense, setPlayerLicense] = useState(() => getPlayerLicense());
   const [api, setApi] = useState(null);
@@ -3130,6 +3139,8 @@ export default function App() {
   }, [api]);
 
   const isTrialExpired = playerLicense.type === 'trial' && playerLicense.trialDaysLeft <= 0;
+  const isBlocked = playerLicense.type === 'blocked';
+  const isExpired = playerLicense.type === 'expired';
 
   const handleActivated = (creds) => {
     // Save as first playlist if none exist
@@ -3153,7 +3164,23 @@ export default function App() {
     return <ActivationScreen onActivated={handleActivated} />;
   }
 
-  if (isTrialExpired) {
+  if (isBlocked) {
+    return (
+      <div className="activation-screen">
+        <div className="activation-container">
+          <div className="activation-info">
+            <div className="activation-info-inner">
+              <div className="trial-expired-icon" style={{color:'#ef4444'}}>&#128683;</div>
+              <h2 className="trial-expired-title">Device Blocked</h2>
+              <p className="trial-expired-desc">This device has been blocked. Please contact support for assistance.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isTrialExpired || isExpired) {
     return <TrialExpiredScreen />;
   }
 

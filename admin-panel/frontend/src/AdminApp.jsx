@@ -484,7 +484,9 @@ function DeviceFormModal({ device, onSave, onClose }) {
             </div>
             {changeMac && (
               <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
-                <input value={newMac} onChange={e => setNewMac(e.target.value)} placeholder="New MAC address" style={{flex:1}} />
+                <div className="form-group" style={{flex:1,margin:0}}>
+                  <input value={newMac} onChange={e => setNewMac(e.target.value)} placeholder="New MAC address (AA:BB:CC:DD:EE:FF)" />
+                </div>
                 <button type="button" className="btn btn-sm btn-primary" onClick={handleChangeMac}>Apply</button>
               </div>
             )}
