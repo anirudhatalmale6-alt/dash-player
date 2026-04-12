@@ -29,6 +29,31 @@ function getPlaylists() {
 }
 function savePlaylists(playlists) {
   localStorage.setItem('dash_playlists', JSON.stringify(playlists));
+  // Sync to backend
+  syncPlaylistsToBackend(playlists);
+}
+
+async function syncPlaylistsToBackend(playlists) {
+  try {
+    const device = getDeviceIdentity();
+    const apiBase = 'https://management.dashplayer.eu/api';
+    // Fetch current backend playlists
+    const res = await axios.post(`${apiBase}/device/lookup`, { mac_address: device.mac, device_key: device.key });
+    const backendPlaylists = res.data?.playlists || [];
+    const backendIds = new Set(backendPlaylists.map(p => p.id));
+    // Add new playlists that don't exist in backend
+    for (const pl of playlists) {
+      const exists = backendPlaylists.find(bp => bp.server_url === pl.server_url && bp.username === pl.username);
+      if (!exists) {
+        await axios.post(`${apiBase}/device/playlists`, {
+          mac_address: device.mac, device_key: device.key,
+          name: pl.name || 'My Playlist', server_url: pl.server_url,
+          username: pl.username, password: pl.password,
+          output_format: pl.output_format || 'm3u8',
+        }).catch(() => {});
+      }
+    }
+  } catch (e) { /* silent fail */ }
 }
 function getDefaultPlaylist() {
   const pls = getPlaylists();
@@ -3097,11 +3122,14 @@ export default function App() {
     }
   }, [credentials]);
 
-  // Fetch license from backend
+  // Fetch license from backend and sync playlists
   useEffect(() => {
     fetchPlayerLicense().then(lic => {
       if (lic) setPlayerLicense(lic);
     });
+    // Sync: push local playlists to backend
+    const localPls = getPlaylists();
+    if (localPls.length > 0) syncPlaylistsToBackend(localPls);
   }, []);
 
   // Re-apply VPN proxy on startup (Electron only)
