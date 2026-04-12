@@ -23,8 +23,13 @@
       "preload.js",
       "app/**/*",
       "icon.ico",
-      "icon.png",
-      "!node_modules/ffmpeg-static/**"
+      "icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/mpv",
+        "to": "mpv"
+      }
     ],
     "win": {
       "target": [

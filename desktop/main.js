@@ -1,8 +1,9 @@
-const { app, BrowserWindow, session, ipcMain } = require('electron');
+const { app, BrowserWindow, session, ipcMain, screen } = require('electron');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
 const http = require('http');
-const os = require('os');
+const net = require('net');
+const fs = require('fs');
 
 // Enable proprietary codecs (H.265/HEVC), audio track selection, and hardware acceleration
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport,MediaFoundationH265Decoding,AudioTrackSelection');
@@ -10,111 +11,131 @@ app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-accelerated-video-decode');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
-/* ══════ FFmpeg Integration ══════ */
-let ffmpegPath = null;
-let transcodingServer = null;
-let transcodingPort = 0;
-const activeTranscodes = new Map(); // port -> { process, url }
+/* ══════ MPV Player Integration ══════ */
+let mpvPath = null;
+let mpvProcess = null;
+let mpvIpcPath = null;
+let mpvReady = false;
+let mainWindow = null;
+let pendingCommands = [];
+let commandId = 0;
+let commandCallbacks = new Map();
 
-function detectFFmpeg() {
-  const candidates = process.platform === 'win32'
-    ? ['ffmpeg.exe', 'C:\\ffmpeg\\bin\\ffmpeg.exe', 'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
-       path.join(app.getPath('userData'), 'ffmpeg.exe')]
-    : ['ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+function getMpvPath() {
+  // Check bundled mpv first (in extraResources)
+  const bundled = process.platform === 'win32'
+    ? path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'mpv', 'mpv.exe')
+    : path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'mpv', 'mpv');
 
-  for (const candidate of candidates) {
+  if (fs.existsSync(bundled)) {
+    console.log('[MPV] Found bundled:', bundled);
+    return bundled;
+  }
+
+  // Check system PATH
+  const systemCandidates = process.platform === 'win32'
+    ? ['mpv.exe', 'C:\\mpv\\mpv.exe', 'C:\\Program Files\\mpv\\mpv.exe']
+    : ['mpv', '/usr/bin/mpv', '/usr/local/bin/mpv'];
+
+  for (const candidate of systemCandidates) {
     try {
-      const result = require('child_process').execFileSync(candidate, ['-version'], {
+      require('child_process').execFileSync(candidate, ['--version'], {
         timeout: 3000, stdio: ['pipe', 'pipe', 'pipe']
       });
-      if (result.toString().includes('ffmpeg')) {
-        ffmpegPath = candidate;
-        console.log('[FFmpeg] Found:', ffmpegPath);
-        return true;
-      }
-    } catch (e) { /* not found, try next */ }
+      console.log('[MPV] Found system:', candidate);
+      return candidate;
+    } catch (e) { /* not found */ }
   }
-  console.log('[FFmpeg] Not found on system');
-  return false;
+
+  console.log('[MPV] Not found');
+  return null;
 }
 
-function startTranscodingServer() {
-  transcodingServer = http.createServer((req, res) => {
-    const url = new URL(req.url, `http://localhost`);
-    const streamUrl = url.searchParams.get('url');
-    const mode = url.searchParams.get('mode') || 'transcode'; // transcode | probe | subtitle
-
-    if (!streamUrl) {
-      res.writeHead(400); res.end('Missing url parameter'); return;
-    }
-
-    if (mode === 'probe') {
-      // Probe stream for track info using ffmpeg -i
-      const args = ['-i', streamUrl, '-hide_banner', '-show_streams', '-show_format',
-                    '-print_format', 'json', '-v', 'quiet'];
-      // Use ffprobe if available, else ffmpeg
-      const probePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/, 'ffprobe$1');
-      execFile(probePath, args, { timeout: 15000 }, (err, stdout, stderr) => {
-        if (err) {
-          // Fallback: use ffmpeg -i which outputs to stderr
-          execFile(ffmpegPath, ['-i', streamUrl, '-hide_banner'], { timeout: 15000 },
-            (err2, stdout2, stderr2) => {
-              res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-              res.end(JSON.stringify({ raw: (stderr2 || '').toString(), type: 'ffmpeg' }));
-            });
-          return;
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ ...JSON.parse(stdout), type: 'ffprobe' }));
-      });
+// Send command to mpv via JSON IPC
+function mpvCommand(args) {
+  return new Promise((resolve, reject) => {
+    if (!mpvProcess || !mpvReady) {
+      reject(new Error('MPV not ready'));
       return;
     }
+    const id = ++commandId;
+    const cmd = JSON.stringify({ command: args, request_id: id }) + '\n';
+    commandCallbacks.set(id, { resolve, reject, timeout: setTimeout(() => {
+      commandCallbacks.delete(id);
+      reject(new Error('MPV command timeout'));
+    }, 5000) });
 
-    if (mode === 'subtitle') {
-      const trackIndex = parseInt(url.searchParams.get('track') || '0');
-      res.writeHead(200, {
-        'Content-Type': 'text/vtt', 'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
-      });
-      const ffProc = spawn(ffmpegPath, [
-        '-i', streamUrl, '-map', `0:s:${trackIndex}`,
-        '-f', 'webvtt', '-v', 'quiet', 'pipe:1'
-      ]);
-      ffProc.stdout.pipe(res);
-      ffProc.stderr.on('data', (d) => console.log('[FFmpeg subtitle]', d.toString()));
-      ffProc.on('error', () => { res.end(); });
-      ffProc.on('exit', () => { res.end(); });
-      req.on('close', () => { ffProc.kill(); });
-      return;
+    try {
+      if (process.platform === 'win32') {
+        // Windows named pipe
+        const client = net.connect(mpvIpcPath, () => {
+          client.write(cmd);
+        });
+        let data = '';
+        client.on('data', (chunk) => { data += chunk; });
+        client.on('end', () => {
+          try {
+            const lines = data.trim().split('\n');
+            for (const line of lines) {
+              const resp = JSON.parse(line);
+              if (resp.request_id && commandCallbacks.has(resp.request_id)) {
+                const cb = commandCallbacks.get(resp.request_id);
+                clearTimeout(cb.timeout);
+                commandCallbacks.delete(resp.request_id);
+                if (resp.error === 'success') cb.resolve(resp.data);
+                else cb.reject(new Error(resp.error));
+              }
+            }
+          } catch (e) { /* parse error */ }
+        });
+        client.on('error', (err) => {
+          const cb = commandCallbacks.get(id);
+          if (cb) { clearTimeout(cb.timeout); commandCallbacks.delete(id); cb.reject(err); }
+        });
+      } else {
+        // Unix socket
+        const client = net.connect(mpvIpcPath, () => {
+          client.write(cmd);
+          client.end();
+        });
+        let data = '';
+        client.on('data', (chunk) => { data += chunk; });
+        client.on('end', () => {
+          try {
+            const resp = JSON.parse(data.trim().split('\n').pop());
+            const cb = commandCallbacks.get(id);
+            if (cb) {
+              clearTimeout(cb.timeout);
+              commandCallbacks.delete(id);
+              if (resp.error === 'success') cb.resolve(resp.data);
+              else cb.reject(new Error(resp.error));
+            }
+          } catch (e) { /* parse error */ }
+        });
+      }
+    } catch (e) {
+      const cb = commandCallbacks.get(id);
+      if (cb) { clearTimeout(cb.timeout); commandCallbacks.delete(id); cb.reject(e); }
     }
-
-    // mode === 'transcode': transcode live stream (copy video, convert audio to AAC)
-    res.writeHead(200, {
-      'Content-Type': 'video/mp2t', 'Access-Control-Allow-Origin': '*',
-      'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-cache',
-    });
-
-    const audioTrack = url.searchParams.get('audio');
-    const audioMap = audioTrack ? ['-map', '0:v:0', '-map', `0:a:${audioTrack}`] : ['-map', '0:v:0', '-map', '0:a:0?'];
-
-    const ffProc = spawn(ffmpegPath, [
-      '-re', '-i', streamUrl,
-      ...audioMap,
-      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
-      '-f', 'mpegts', '-v', 'quiet', 'pipe:1'
-    ]);
-
-    ffProc.stdout.pipe(res);
-    ffProc.stderr.on('data', (d) => console.log('[FFmpeg transcode]', d.toString()));
-    ffProc.on('error', (err) => { console.log('[FFmpeg error]', err); res.end(); });
-    ffProc.on('exit', (code) => { console.log('[FFmpeg exit]', code); res.end(); });
-    req.on('close', () => { ffProc.kill(); });
   });
+}
 
-  transcodingServer.listen(0, '127.0.0.1', () => {
-    transcodingPort = transcodingServer.address().port;
-    console.log('[FFmpeg] Transcoding server on port', transcodingPort);
-  });
+// Get mpv property
+async function mpvGetProperty(name) {
+  return mpvCommand(['get_property', name]);
+}
+
+// Set mpv property
+async function mpvSetProperty(name, value) {
+  return mpvCommand(['set_property', name, value]);
+}
+
+function stopMpv() {
+  if (mpvProcess) {
+    try { mpvProcess.kill(); } catch(e) {}
+    mpvProcess = null;
+    mpvReady = false;
+  }
 }
 
 function createWindow() {
@@ -134,6 +155,8 @@ function createWindow() {
       webSecurity: false,
     },
   });
+
+  mainWindow = win;
 
   // Load the built React app
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
@@ -156,13 +179,15 @@ function createWindow() {
     }
   });
 
+  // Stop mpv when window closes
+  win.on('closed', () => { stopMpv(); mainWindow = null; });
+
   return win;
 }
 
 // IPC handlers for proxy/VPN
 ipcMain.handle('set-proxy', async (event, config) => {
   try {
-    // config: { protocol: 'socks5'|'http', server: string, port: string, username?: string, password?: string }
     let proxyUrl;
     if (config.username && config.password) {
       proxyUrl = `${config.protocol}://${config.username}:${config.password}@${config.server}:${config.port}`;
@@ -188,49 +213,168 @@ ipcMain.handle('clear-proxy', async () => {
   }
 });
 
-// FFmpeg IPC handlers
-ipcMain.handle('ffmpeg-status', () => ({
-  available: !!ffmpegPath,
-  path: ffmpegPath,
-  port: transcodingPort,
+/* ══════ MPV IPC Handlers ══════ */
+ipcMain.handle('mpv-status', () => ({
+  available: !!mpvPath,
+  path: mpvPath,
+  ready: mpvReady,
 }));
 
-ipcMain.handle('ffmpeg-transcode-url', (event, { url, audioTrack }) => {
-  if (!ffmpegPath || !transcodingPort) return null;
-  const params = new URLSearchParams({ url, mode: 'transcode' });
-  if (audioTrack !== undefined) params.set('audio', audioTrack);
-  return `http://127.0.0.1:${transcodingPort}/?${params}`;
+ipcMain.handle('mpv-play', async (event, { url, isLive }) => {
+  if (!mpvPath) return { success: false, error: 'MPV not available' };
+
+  // Stop any existing mpv process
+  stopMpv();
+
+  // Set up IPC pipe path
+  mpvIpcPath = process.platform === 'win32'
+    ? '\\\\.\\pipe\\dashplayer-mpv-' + process.pid
+    : '/tmp/dashplayer-mpv-' + process.pid + '.sock';
+
+  // Clean up old socket on unix
+  if (process.platform !== 'win32') {
+    try { fs.unlinkSync(mpvIpcPath); } catch(e) {}
+  }
+
+  const args = [
+    '--no-terminal',
+    '--force-window=yes',
+    '--keep-open=yes',
+    '--no-border',
+    '--ontop',
+    '--title=DashPlayer Video',
+    '--input-ipc-server=' + mpvIpcPath,
+    '--osd-level=0',
+    '--hwdec=auto',
+    '--volume=100',
+    '--cache=yes',
+    '--demuxer-max-bytes=50M',
+  ];
+
+  if (isLive) {
+    args.push('--cache-secs=5', '--demuxer-readahead-secs=3');
+  }
+
+  args.push('--', url);
+
+  console.log('[MPV] Starting:', mpvPath, args.join(' '));
+  mpvProcess = spawn(mpvPath, args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: false,
+  });
+
+  mpvProcess.stdout.on('data', (d) => console.log('[MPV out]', d.toString().trim()));
+  mpvProcess.stderr.on('data', (d) => console.log('[MPV err]', d.toString().trim()));
+  mpvProcess.on('exit', (code) => {
+    console.log('[MPV] Exited with code', code);
+    mpvReady = false;
+    mpvProcess = null;
+    // Notify renderer that mpv stopped
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mpv-stopped');
+    }
+  });
+
+  // Wait for IPC to become available
+  await new Promise((resolve) => {
+    let attempts = 0;
+    const check = () => {
+      attempts++;
+      if (attempts > 20) { resolve(); return; } // give up after 2 seconds
+      try {
+        const client = net.connect(mpvIpcPath, () => {
+          client.end();
+          mpvReady = true;
+          console.log('[MPV] IPC ready');
+          resolve();
+        });
+        client.on('error', () => { setTimeout(check, 100); });
+      } catch(e) { setTimeout(check, 100); }
+    };
+    setTimeout(check, 200);
+  });
+
+  return { success: true, ready: mpvReady };
 });
 
-ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
-  if (!ffmpegPath || !transcodingPort) return null;
+ipcMain.handle('mpv-stop', () => {
+  stopMpv();
+  return { success: true };
+});
+
+ipcMain.handle('mpv-command', async (event, { command }) => {
   try {
-    const res = await new Promise((resolve, reject) => {
-      const probeUrl = `http://127.0.0.1:${transcodingPort}/?mode=probe&url=${encodeURIComponent(url)}`;
-      http.get(probeUrl, (resp) => {
-        let data = '';
-        resp.on('data', (c) => data += c);
-        resp.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-      }).on('error', reject);
-    });
-    return res;
+    const result = await mpvCommand(command);
+    return { success: true, data: result };
   } catch (e) {
-    console.log('[FFmpeg probe error]', e.message);
-    return null;
+    return { success: false, error: e.message };
   }
 });
 
-ipcMain.handle('ffmpeg-subtitle-url', (event, { url, trackIndex }) => {
-  if (!ffmpegPath || !transcodingPort) return null;
-  return `http://127.0.0.1:${transcodingPort}/?mode=subtitle&url=${encodeURIComponent(url)}&track=${trackIndex}`;
+ipcMain.handle('mpv-get-property', async (event, { name }) => {
+  try {
+    const result = await mpvGetProperty(name);
+    return { success: true, data: result };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('mpv-set-property', async (event, { name, value }) => {
+  try {
+    await mpvSetProperty(name, value);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// Get audio/subtitle track info from mpv
+ipcMain.handle('mpv-get-tracks', async () => {
+  try {
+    const count = await mpvGetProperty('track-list/count');
+    const tracks = { audio: [], subtitle: [] };
+    for (let i = 0; i < count; i++) {
+      const type = await mpvGetProperty(`track-list/${i}/type`);
+      const id = await mpvGetProperty(`track-list/${i}/id`);
+      const lang = await mpvGetProperty(`track-list/${i}/lang`).catch(() => '');
+      const title = await mpvGetProperty(`track-list/${i}/title`).catch(() => '');
+      const selected = await mpvGetProperty(`track-list/${i}/selected`).catch(() => false);
+      if (type === 'audio') {
+        tracks.audio.push({ id, lang: lang || '', title: title || '', selected });
+      } else if (type === 'sub') {
+        tracks.subtitle.push({ id, lang: lang || '', title: title || '', selected });
+      }
+    }
+    return { success: true, data: tracks };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// Switch audio track
+ipcMain.handle('mpv-set-audio-track', async (event, { trackId }) => {
+  try {
+    await mpvSetProperty('aid', trackId);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// Switch subtitle track (-1 or 'no' to disable)
+ipcMain.handle('mpv-set-subtitle-track', async (event, { trackId }) => {
+  try {
+    await mpvSetProperty('sid', trackId <= 0 ? 'no' : trackId);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 app.whenReady().then(() => {
-  // Detect FFmpeg and start transcoding server
-  detectFFmpeg();
-  if (ffmpegPath) {
-    startTranscodingServer();
-  }
+  // Detect mpv (bundled or system)
+  mpvPath = getMpvPath();
 
   createWindow();
 
@@ -242,6 +386,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopMpv();
   if (process.platform !== 'darwin') {
     app.quit();
   }
