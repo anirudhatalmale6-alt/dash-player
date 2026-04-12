@@ -81,6 +81,17 @@ const TRANSLATIONS = {
     no_catchup: 'No catch-up channels in this category',
     catchup_channels: 'channels with catch-up',
     custom_groups: 'Custom Groups',
+    new_group: '+ New Group',
+    group_name: 'Group name',
+    create: 'Create',
+    rename: 'Rename',
+    delete: 'Delete',
+    save: 'Save',
+    confirm_delete: 'Confirm',
+    no_groups_yet: 'No custom groups yet',
+    no_groups_desc: 'Create groups and add your favorite channels to organize them',
+    select_channel_epg: 'Select a channel to view EPG',
+    connecting: 'Connecting',
     no_history: 'No watch history yet',
     default_sort: 'Default',
     sort_az: 'A-Z',
@@ -210,6 +221,17 @@ const TRANSLATIONS = {
     no_catchup: 'Geen terugkijk-kanalen in deze categorie',
     catchup_channels: 'kanalen met terugkijken',
     custom_groups: 'Aangepaste groepen',
+    new_group: '+ Nieuwe groep',
+    group_name: 'Groepsnaam',
+    create: 'Aanmaken',
+    rename: 'Hernoemen',
+    delete: 'Verwijderen',
+    save: 'Opslaan',
+    confirm_delete: 'Bevestigen',
+    no_groups_yet: 'Nog geen groepen',
+    no_groups_desc: 'Maak groepen aan en voeg je favoriete kanalen toe',
+    select_channel_epg: 'Selecteer een kanaal om EPG te bekijken',
+    connecting: 'Verbinden',
     no_history: 'Nog geen kijkgeschiedenis',
     default_sort: 'Standaard',
     sort_az: 'A-Z',
@@ -339,6 +361,17 @@ const TRANSLATIONS = {
     no_catchup: 'Bu kategoride tekrar izle kanali yok',
     catchup_channels: 'tekrar izle kanali',
     custom_groups: 'Ozel Gruplar',
+    new_group: '+ Yeni Grup',
+    group_name: 'Grup adi',
+    create: 'Olustur',
+    rename: 'Yeniden Adlandir',
+    delete: 'Sil',
+    save: 'Kaydet',
+    confirm_delete: 'Onayla',
+    no_groups_yet: 'Henuz grup yok',
+    no_groups_desc: 'Gruplar olusturun ve favori kanallarinizi ekleyin',
+    select_channel_epg: 'EPG goruntulmek icin bir kanal secin',
+    connecting: 'Baglaniyor',
     no_history: 'Henuz izleme gecmisi yok',
     default_sort: 'Varsayilan',
     sort_az: 'A-Z',
@@ -1311,7 +1344,7 @@ function LiveTVScreen({ onBack, api }) {
               ) : (
                 <div className="epg-empty">
                   <div style={{ fontSize: 48 }}>&#128250;</div>
-                  <p>Select a channel to view EPG</p>
+                  <p>{t('select_channel_epg')}</p>
                 </div>
               )}
             </div>
@@ -1747,6 +1780,7 @@ function RadioScreen({ onBack, api }) {
   const audioRef = useRef(null);
   const [radioLoading, setRadioLoading] = useState(false);
   const [radioError, setRadioError] = useState(null);
+  const [radioElapsed, setRadioElapsed] = useState(0);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -1754,6 +1788,15 @@ function RadioScreen({ onBack, api }) {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
     };
   }, []);
+
+  // Update elapsed time every second while radio is playing
+  useEffect(() => {
+    if (!playing || radioLoading || radioError) return;
+    const interval = setInterval(() => {
+      if (playing._startTime) setRadioElapsed(Math.floor((Date.now() - playing._startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [playing, radioLoading, radioError]);
 
   const handlePlay = (station) => {
     if (!api) return;
@@ -1789,6 +1832,7 @@ function RadioScreen({ onBack, api }) {
       const onSuccess = () => {
         if (settled) return;
         settled = true;
+        station._startTime = Date.now();
         setRadioLoading(false);
         setRadioError(null);
       };
@@ -1868,19 +1912,27 @@ function RadioScreen({ onBack, api }) {
         </div>
       </div>
       {/* Audio radio player bar */}
-      {playing && !playingUrl && (
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'linear-gradient(135deg, #1a1a2e, #16213e)', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 16, zIndex: 1000, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-          {playing.stream_icon ? <img src={playing.stream_icon} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'contain', background: '#0f0f23' }} onError={e => { e.target.style.display='none'; }} /> : <span style={{ fontSize: 28 }}>&#127911;</span>}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{playing.name}</div>
-            <div style={{ fontSize: 11, opacity: 0.6 }}>{radioLoading ? t('connecting') + '...' : radioError ? radioError : playing._category_name || t('radio')}</div>
+      {playing && !playingUrl && (() => {
+        const mm = String(Math.floor(radioElapsed / 60)).padStart(2, '0');
+        const ss = String(radioElapsed % 60).padStart(2, '0');
+        return (
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'linear-gradient(135deg, #2d1b69, #4a2c8a, #6b3fa0)', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 16, zIndex: 1000, borderTop: '2px solid rgba(138,92,246,0.4)', boxShadow: '0 -4px 20px rgba(138,92,246,0.2)' }}>
+            {playing.stream_icon ? <img src={playing.stream_icon} alt="" style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'contain', background: 'rgba(255,255,255,0.1)', padding: 2 }} onError={e => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display='flex'); }} /> : null}
+            <span style={{ fontSize: 28, display: playing.stream_icon ? 'none' : 'flex' }}>&#127911;</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>{playing.name}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>{radioLoading ? t('connecting') + '...' : radioError ? radioError : playing._category_name || t('radio')}</div>
+            </div>
+            {!radioLoading && !radioError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.7)', fontSize: 13, fontFamily: 'monospace' }}>
+                <div className="radio-playing-indicator"><span className="radio-bar"></span><span className="radio-bar"></span><span className="radio-bar"></span></div>
+                <span>{mm}:{ss}</span>
+              </div>
+            )}
+            <button onClick={handleStop} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', borderRadius: '50%', width: 38, height: 38, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} onMouseEnter={e => e.target.style.background='rgba(255,255,255,0.25)'} onMouseLeave={e => e.target.style.background='rgba(255,255,255,0.15)'}>&#9632;</button>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {!radioLoading && !radioError && <div className="radio-playing-indicator" style={{ marginRight: 8 }}><span className="radio-bar"></span><span className="radio-bar"></span><span className="radio-bar"></span></div>}
-            <button onClick={handleStop} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: 36, height: 36, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&#9632;</button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
       {/* VideoPlayer fallback for radio streams that don't support MP3 (e.g. .ts streams) */}
       {playingUrl && <VideoPlayer url={playingUrl} title={playing?.name || 'Radio'} onClose={() => { handleStop(); }} />}
     </div>
@@ -2846,6 +2898,9 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
   const [editGroupId, setEditGroupId] = useState(null);
   const [editGroupName, setEditGroupName] = useState('');
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(null);
+  const [groupPlayerMode, setGroupPlayerMode] = useState(null); // { group, playingChannel }
+  const [groupEpg, setGroupEpg] = useState([]);
+  const [showGroupEpgOverlay, setShowGroupEpgOverlay] = useState(false);
   const [liveChannels, setLiveChannels] = useState([]);
   const [vodItems, setVodItems] = useState([]);
   const [seriesItems, setSeriesItems] = useState([]);
@@ -2928,6 +2983,29 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
   };
 
   const [moveTarget, setMoveTarget] = useState(null); // { item, type }
+
+  // Fetch EPG for group player mode
+  useEffect(() => {
+    if (!groupPlayerMode?.playingChannel || !api) { setGroupEpg([]); return; }
+    const ch = groupPlayerMode.playingChannel;
+    if (ch.type !== 'live') return;
+    let cancelled = false;
+    api.getEPG(ch.id).then(data => {
+      if (cancelled) return;
+      if (data && data.epg_listings && Array.isArray(data.epg_listings)) {
+        setGroupEpg(data.epg_listings.map(e => ({
+          id: e.id, title: b64decode(e.title || ''), description: b64decode(e.description || ''),
+          start: e.start, end: e.end,
+        })));
+      } else { setGroupEpg([]); }
+    }).catch(() => setGroupEpg([]));
+    return () => { cancelled = true; };
+  }, [groupPlayerMode?.playingChannel, api]);
+
+  const handleGroupPlay = (group, channel) => {
+    setGroupPlayerMode({ group, playingChannel: channel });
+    addToHistory({ id: channel.id, name: channel.name, type: channel.type, streamId: channel.id, icon: channel.icon });
+  };
 
   const renderFavList = (items, type) => {
     if (items.length === 0) return (
@@ -3018,23 +3096,23 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
           {activeTab === 'groups' && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>Custom Groups</h3>
-                <button className="settings-btn settings-btn-primary" onClick={() => setShowCreateGroup(true)} style={{ fontSize: 12 }}>+ New Group</button>
+                <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{t('custom_groups')}</h3>
+                <button className="settings-btn settings-btn-primary" onClick={() => setShowCreateGroup(true)} style={{ fontSize: 12 }}>{t('new_group')}</button>
               </div>
               {showCreateGroup && (
                 <div className="settings-card" style={{ marginBottom: 16, padding: 16 }}>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <input className="quick-connect-input" placeholder="Group name" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleCreateGroup()} />
-                    <button className="settings-btn settings-btn-primary" onClick={handleCreateGroup} style={{ fontSize: 12 }}>Create</button>
-                    <button className="settings-btn settings-btn-secondary" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); }} style={{ fontSize: 12 }}>Cancel</button>
+                    <input className="quick-connect-input" placeholder={t('group_name')} value={newGroupName} onChange={e => setNewGroupName(e.target.value)} style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleCreateGroup()} />
+                    <button className="settings-btn settings-btn-primary" onClick={handleCreateGroup} style={{ fontSize: 12 }}>{t('create')}</button>
+                    <button className="settings-btn settings-btn-secondary" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); }} style={{ fontSize: 12 }}>{t('cancel')}</button>
                   </div>
                 </div>
               )}
               {groups.length === 0 && !showCreateGroup && (
                 <div className="epg-empty">
                   <div style={{ fontSize: 48 }}>{'\u{1F4C1}'}</div>
-                  <p>No custom groups yet</p>
-                  <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>Create groups and add your favorite channels to organize them</p>
+                  <p>{t('no_groups_yet')}</p>
+                  <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>{t('no_groups_desc')}</p>
                 </div>
               )}
               {groups.map(group => (
@@ -3043,21 +3121,21 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
                     {editGroupId === group.id ? (
                       <div style={{ display: 'flex', gap: 8, flex: 1 }}>
                         <input className="quick-connect-input" value={editGroupName} onChange={e => setEditGroupName(e.target.value)} style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleRenameGroup(group.id)} />
-                        <button className="settings-btn settings-btn-primary" onClick={() => handleRenameGroup(group.id)} style={{ fontSize: 11 }}>Save</button>
-                        <button className="settings-btn settings-btn-secondary" onClick={() => setEditGroupId(null)} style={{ fontSize: 11 }}>Cancel</button>
+                        <button className="settings-btn settings-btn-primary" onClick={() => handleRenameGroup(group.id)} style={{ fontSize: 11 }}>{t('save')}</button>
+                        <button className="settings-btn settings-btn-secondary" onClick={() => setEditGroupId(null)} style={{ fontSize: 11 }}>{t('cancel')}</button>
                       </div>
                     ) : (
                       <>
                         <h3 className="settings-card-title" style={{ margin: 0 }}>{'\u{1F4C1}'} {group.name} <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>({group.channels.length})</span></h3>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="settings-btn settings-btn-secondary" onClick={() => { setEditGroupId(group.id); setEditGroupName(group.name); }} style={{ fontSize: 11 }}>Rename</button>
+                          <button className="settings-btn settings-btn-secondary" onClick={() => { setEditGroupId(group.id); setEditGroupName(group.name); }} style={{ fontSize: 11 }}>{t('rename')}</button>
                           {confirmDeleteGroup === group.id ? (
                             <>
-                              <button className="settings-btn settings-btn-danger" onClick={() => handleDeleteGroup(group.id)} style={{ fontSize: 11 }}>Confirm</button>
-                              <button className="settings-btn settings-btn-secondary" onClick={() => setConfirmDeleteGroup(null)} style={{ fontSize: 11 }}>Cancel</button>
+                              <button className="settings-btn settings-btn-danger" onClick={() => handleDeleteGroup(group.id)} style={{ fontSize: 11 }}>{t('confirm_delete')}</button>
+                              <button className="settings-btn settings-btn-secondary" onClick={() => setConfirmDeleteGroup(null)} style={{ fontSize: 11 }}>{t('cancel')}</button>
                             </>
                           ) : (
-                            <button className="settings-btn settings-btn-danger" onClick={() => setConfirmDeleteGroup(group.id)} style={{ fontSize: 11 }}>Delete</button>
+                            <button className="settings-btn settings-btn-danger" onClick={() => setConfirmDeleteGroup(group.id)} style={{ fontSize: 11 }}>{t('delete')}</button>
                           )}
                         </div>
                       </>
@@ -3071,7 +3149,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
                         <div key={ch.id} className="history-item">
                           {ch.icon ? <img className="history-icon" src={ch.icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="history-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{ch.type === 'live' ? '\u{1F4FA}' : '\u{1F3AC}'}</div>}
                           <div className="history-info" onClick={() => {
-                            if (ch.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(ch.id), name: ch.name });
+                            if (ch.type === 'live' && api) handleGroupPlay(group, ch);
                             else if (ch.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(ch.id, 'mp4'), name: ch.name });
                           }} style={{ cursor: 'pointer', flex: 1 }}>
                             <div className="history-name">{ch.name}</div>
@@ -3089,6 +3167,61 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
         </div>
       </div>
       {playingItem && <VideoPlayer url={playingItem.url} title={playingItem.name} onClose={() => setPlayingItem(null)} />}
+      {/* Group Player Mode - Live TV style layout */}
+      {groupPlayerMode && api && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)' }}>
+            <button className="back-btn" onClick={() => { setGroupPlayerMode(null); setGroupEpg([]); setShowGroupEpgOverlay(false); }}>&#8592; {t('back')}</button>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{groupPlayerMode.group.name}</h2>
+          </div>
+          <div className="live-player-area" style={{ flex: 1 }}>
+            <div className="live-player-main">
+              <div className="live-player-top">
+                <div className="live-player-info">
+                  <span className="live-player-channel-name">{groupPlayerMode.playingChannel.name}</span>
+                  {groupPlayerMode.playingChannel.type === 'live' && <span className="epg-live-badge">LIVE</span>}
+                </div>
+                <div className="live-player-actions">
+                  <button className="back-btn" onClick={() => { setGroupPlayerMode(null); setGroupEpg([]); }}>&#9632; Stop</button>
+                </div>
+              </div>
+              <div className="live-player-video">
+                <VideoPlayer
+                  key={groupPlayerMode.playingChannel.id}
+                  url={groupPlayerMode.playingChannel.type === 'live' ? api.getLiveUrl(groupPlayerMode.playingChannel.id) : api.getVodUrl(groupPlayerMode.playingChannel.id, 'mp4')}
+                  title={groupPlayerMode.playingChannel.name}
+                  onClose={() => { setGroupPlayerMode(null); setGroupEpg([]); }}
+                  inline={true}
+                />
+              </div>
+              <div className="live-player-epg-bar" onClick={() => groupEpg.length > 0 && setShowGroupEpgOverlay(v => !v)}>
+                {groupEpg.length > 0 ? groupEpg.filter(p => {
+                  const now = new Date();
+                  const start = new Date(p.start);
+                  const end = new Date(p.end);
+                  return now <= end;
+                }).slice(0, 4).map(prog => (
+                  <div key={prog.id} className="live-epg-item">
+                    <span className="live-epg-time">{new Date(prog.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="live-epg-title">{prog.title}</span>
+                  </div>
+                )) : <div className="live-epg-item"><span className="live-epg-title" style={{ opacity: 0.5 }}>No EPG data available</span></div>}
+              </div>
+            </div>
+            <div className="live-player-channels">
+              {groupPlayerMode.group.channels.filter(ch => ch.type === 'live').map(ch => (
+                <div key={ch.id} className={`ch-item ${groupPlayerMode.playingChannel?.id === ch.id ? 'active' : ''}`}
+                  onClick={() => { setGroupPlayerMode(prev => ({ ...prev, playingChannel: ch })); addToHistory({ id: ch.id, name: ch.name, type: ch.type, streamId: ch.id, icon: ch.icon }); }}>
+                  {ch.icon ? <img className="ch-icon-img" src={ch.icon} alt="" style={{ width: 28, height: 28 }} onError={e => { e.target.style.display = 'none'; }} /> : <span style={{ fontSize: 16 }}>{'\u{1F4FA}'}</span>}
+                  <div className="ch-info" style={{ minWidth: 0 }}>
+                    <div className="ch-name" style={{ fontSize: 11 }}>{ch.name}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
