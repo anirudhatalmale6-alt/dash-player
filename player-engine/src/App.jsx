@@ -908,11 +908,14 @@ function VideoPlayer({ url, onClose, title, inline }) {
     let currentStep = 0;
     let playbackStarted = false;
 
-    const createMpegTsPlayer = (streamUrl, label) => {
+    const createMpegTsPlayer = (streamUrl, label, videoOnly = false) => {
       if (!mpegts.isSupported() || !mountedRef.current) return false;
-      setCurrentFormat(label);
-      console.log(`[DashPlayer] Trying ${label}: ${streamUrl}`);
-      const player = mpegts.createPlayer({ type: 'mpegts', isLive, url: streamUrl, hasAudio: true, hasVideo: true }, {
+      setCurrentFormat(videoOnly ? `${label} (video only)` : label);
+      console.log(`[DashPlayer] Trying ${label}${videoOnly ? ' (video only)' : ''}: ${streamUrl}`);
+      const player = mpegts.createPlayer({
+        type: 'mpegts', isLive, url: streamUrl,
+        hasAudio: !videoOnly, hasVideo: true,
+      }, {
         enableWorker: true, enableStashBuffer: true, stashInitialSize: 384,
         lazyLoad: false, lazyLoadMaxDuration: isLive ? 30 : 300,
         liveBufferLatencyChasing: isLive,
@@ -940,7 +943,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       retryTimerRef.current = setTimeout(() => {
         if (!mountedRef.current || playbackStarted) return;
         if (video.readyState < 2 && !errorTriggered) {
-          console.log(`[DashPlayer] ${label} timeout, readyState=${video.readyState}`);
+          console.log(`[DashPlayer] ${label}${videoOnly ? ' (video only)' : ''} timeout, readyState=${video.readyState}`);
           errorTriggered = true; cleanup();
           nextStep();
         }
@@ -1025,19 +1028,20 @@ function VideoPlayer({ url, onClose, title, inline }) {
     };
 
     // Build the format chain based on stream type
-    // For live: HLS → MPEG-TS(.ts) → MPEG-TS(raw, no ext) → Direct
-    // For VOD: Direct → MPEG-TS(.ts) → HLS
+    // For live: HLS → MPEG-TS → MPEG-TS(video-only, skips unsupported audio) → MPEG-TS(raw) → Direct
+    // For VOD: Direct → MPEG-TS → HLS → MPEG-TS(video-only)
     const rawUrl = baseUrl.replace(/\/live\//, '/'); // URL without /live/ prefix (VLC format)
     const steps = isLive ? [
       () => tryHls(baseUrl + '.m3u8'),
       () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'),
-      () => createMpegTsPlayer(rawUrl, 'MPEG-TS (raw)'),
+      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS', true), // video-only (skip MP2 audio that Chrome can't decode)
+      () => createMpegTsPlayer(rawUrl, 'MPEG-TS (raw)', true),
       () => tryDirect(url),
     ] : [
       () => tryDirect(url),
       () => createMpegTsPlayer(url, 'MPEG-TS'),
       () => tryHls(baseUrl + '.m3u8'),
-      () => tryDirect(baseUrl + '.mkv'),
+      () => createMpegTsPlayer(url, 'MPEG-TS', true), // video-only fallback
     ];
 
     const nextStep = () => {
