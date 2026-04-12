@@ -5,3 +5,4 @@ dist/
 .DS_Store
 desktop/release/
 desktop/node_modules/
+resources/mpv/mpv.exe
