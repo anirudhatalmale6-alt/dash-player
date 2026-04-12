@@ -1,9 +1,6 @@
 const { app, BrowserWindow, session, ipcMain } = require('electron');
 const path = require('path');
 
-// Set custom user agent
-const USER_AGENT = 'DashPlayer/1.0';
-
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -18,7 +15,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
+      webSecurity: false,
     },
   });
 

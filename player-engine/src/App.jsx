@@ -223,12 +223,17 @@ function createXtreamApi(url, username, password, outputFormat = 'm3u8') {
   const liveExt = outputFormat === 'ts' ? 'ts' : 'm3u8';
   const req = async (action, params = {}) => {
     try {
+      const queryParams = { username, password, ...params };
+      if (action) queryParams.action = action;
       const res = await axios.get(`${baseUrl}/player_api.php`, {
-        params: { username, password, action, ...params },
+        params: queryParams,
         timeout: 60000,
       });
       // Some servers return HTML error pages (Cloudflare etc.)
-      if (typeof res.data === 'string' && res.data.includes('<!DOCTYPE')) return null;
+      if (typeof res.data === 'string' && res.data.includes('<!DOCTYPE')) {
+        console.warn('Xtream API blocked (HTML response):', action);
+        return null;
+      }
       return res.data;
     } catch (e) {
       console.warn('Xtream API error:', action, e.message);
