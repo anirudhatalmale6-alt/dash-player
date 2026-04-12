@@ -67,10 +67,23 @@ db.exec(`
     value TEXT DEFAULT ''
   );
 
+  CREATE TABLE IF NOT EXISTS playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    name TEXT DEFAULT 'My Playlist',
+    server_url TEXT NOT NULL,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    is_default INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_devices_mac ON devices(mac_address);
   CREATE INDEX IF NOT EXISTS idx_devices_key ON devices(device_key);
   CREATE INDEX IF NOT EXISTS idx_payments_device ON payments(device_id);
   CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+  CREATE INDEX IF NOT EXISTS idx_playlists_device ON playlists(device_id);
 `);
 
 // Insert default settings if not exist
