@@ -69,12 +69,22 @@ function ensureLocalServer() {
         console.log(`[FFmpeg] Extracting subtitle track ${subIndex} from:`, sourceUrl);
         const proc = spawn(ffmpegPath, [
           '-hide_banner', '-loglevel', 'warning',
+          '-probesize', '50000000',     // 50MB probe - find subtitles faster
+          '-analyzeduration', '10000000', // 10 seconds analysis
           '-i', sourceUrl,
           '-map', `0:s:${subIndex}`,
-          '-c:s', 'webvtt',     // explicitly convert subtitle to WebVTT
+          '-c:s', 'webvtt',
           '-f', 'webvtt',
           'pipe:1',
         ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+        // Kill subtitle extraction after 30 seconds if no data
+        const subTimeout = setTimeout(() => {
+          if (!hasData) {
+            console.log('[FFmpeg sub] Timeout - no subtitle data after 30s');
+            try { proc.kill(); } catch(e) {}
+          }
+        }, 30000);
 
         let hasData = false;
         let stderrLog = '';
@@ -91,11 +101,13 @@ function ensureLocalServer() {
         });
         proc.stderr.on('data', (d) => { stderrLog += d.toString(); });
         proc.on('exit', (code) => {
+          clearTimeout(subTimeout);
           if (!hasData) {
-            console.log('[FFmpeg sub] No subtitle data produced. stderr:', stderrLog.trim());
+            console.log('[FFmpeg sub] No subtitle data produced. Code:', code, 'stderr:', stderrLog.slice(-300).trim());
             res.writeHead(200, { 'Content-Type': 'text/vtt', 'Access-Control-Allow-Origin': '*' });
             res.end('WEBVTT\n\n'); // empty valid WebVTT
           } else {
+            console.log('[FFmpeg sub] Subtitle extraction complete');
             res.end();
           }
         });

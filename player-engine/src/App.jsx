@@ -1162,7 +1162,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
     // Start the chain
     steps[0]();
 
-    return () => { clearTimeout(trackDetectTimer); clearTimeout(trackDetectTimer2); cleanup(); if (video) { video.src = ''; video.load(); } };
+    return () => {
+      mountedRef.current = false; // mark as unmounted BEFORE cleanup to prevent error handlers from firing
+      clearTimeout(trackDetectTimer); clearTimeout(trackDetectTimer2);
+      cleanup();
+      if (video) { video.src = ''; video.load(); }
+      mountedRef.current = true; // reset for next mount
+    };
   }, [url]);
 
   const handleAudioChange = async (trackId) => {
@@ -1198,8 +1204,12 @@ function VideoPlayer({ url, onClose, title, inline }) {
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
       if (result.success && result.url && videoRef.current) {
         try {
-          // Fetch the WebVTT data and create a blob URL
-          const resp = await fetch(result.url);
+          // Fetch the WebVTT data with timeout (FFmpeg subtitle extraction can be slow)
+          console.log('[DashPlayer] Fetching subtitle from:', result.url);
+          const controller = new AbortController();
+          const fetchTimeout = setTimeout(() => controller.abort(), 35000); // 35s timeout
+          const resp = await fetch(result.url, { signal: controller.signal });
+          clearTimeout(fetchTimeout);
           const vttText = await resp.text();
           console.log('[DashPlayer] Subtitle WebVTT loaded, length:', vttText.length, 'preview:', vttText.substring(0, 100));
           if (vttText.length < 20 || !vttText.includes('WEBVTT')) {
