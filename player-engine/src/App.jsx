@@ -1047,10 +1047,21 @@ function VideoPlayer({ url, onClose, title, inline }) {
         if (!result.success || !result.url) { console.log('[DashPlayer] FFmpeg URL failed'); nextStep(); return; }
         console.log('[DashPlayer] FFmpeg local URL:', result.url);
         setUsingFfmpeg(true);
-        // Stop any previous mpegts/hls players before setting new src
-        cleanup();
+        // Stop mpegts/hls players but DON'T stop ffmpeg or reset video
+        if (playerRef.current) {
+          try { playerRef.current.pause(); } catch(e) {}
+          try { playerRef.current.unload(); } catch(e) {}
+          try { playerRef.current.detachMediaElement(); } catch(e) {}
+          try { playerRef.current.destroy(); } catch(e) {}
+          playerRef.current = null;
+        }
+        if (hlsRef.current) {
+          try { hlsRef.current.destroy(); } catch(e) {}
+          hlsRef.current = null;
+        }
         video.src = result.url;
         video.load();
+        let ffmpegErrorHandled = false;
         video.addEventListener('loadeddata', () => {
           console.log('[DashPlayer] FFmpeg loadeddata, readyState:', video.readyState);
           playbackStarted = true;
@@ -1061,13 +1072,34 @@ function VideoPlayer({ url, onClose, title, inline }) {
           playbackStarted = true;
           onPlaying();
         }, { once: true });
-        video.addEventListener('error', (e) => {
-          console.log('[DashPlayer] FFmpeg playback error:', video.error?.message || e);
-          if (!mountedRef.current || playbackStarted) return;
-          setUsingFfmpeg(false);
-          nextStep();
-        }, { once: true });
-        setTimeout(() => { if (video) video.play().catch(() => {}); }, 500);
+        const handleFfmpegError = (e) => {
+          const errMsg = video.error?.message || '';
+          console.log('[DashPlayer] FFmpeg playback error:', errMsg);
+          // PIPELINE_ERROR_DECODE on live streams = reconnect FFmpeg
+          if (playbackStarted && isLive && errMsg.includes('PIPELINE_ERROR_DECODE')) {
+            console.log('[DashPlayer] FFmpeg decode error on live, reconnecting...');
+            if (ffmpegErrorHandled) return;
+            ffmpegErrorHandled = true;
+            // Restart FFmpeg stream
+            window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack: 0 }).then(r2 => {
+              if (r2.success && r2.url && mountedRef.current) {
+                video.src = r2.url;
+                video.load();
+                video.play().catch(() => {});
+                ffmpegErrorHandled = false;
+                video.addEventListener('error', handleFfmpegError, { once: true });
+              }
+            });
+            return;
+          }
+          if (!mountedRef.current || (playbackStarted && !isLive)) return;
+          if (!playbackStarted) {
+            setUsingFfmpeg(false);
+            nextStep();
+          }
+        };
+        video.addEventListener('error', handleFfmpegError, { once: true });
+        setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
         retryTimerRef.current = setTimeout(() => {
           if (!mountedRef.current || playbackStarted) return;
           console.log('[DashPlayer] FFmpeg timeout, readyState:', video.readyState, 'networkState:', video.networkState);
@@ -1075,7 +1107,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
             setUsingFfmpeg(false);
             nextStep();
           }
-        }, 12000); // longer timeout - FFmpeg needs time to connect and start transcoding
+        }, 12000);
       } catch (e) {
         console.log('[DashPlayer] FFmpeg error:', e);
         setUsingFfmpeg(false);
@@ -1161,40 +1193,50 @@ function VideoPlayer({ url, onClose, title, inline }) {
     setSelectedSubtitle(trackId);
     setShowTrackMenu(null);
     if (trackId >= 0 && window.dashPlayer?.ffmpegSubtitleUrl && url) {
-      // Extract subtitle via FFmpeg as WebVTT
+      // Extract subtitle via FFmpeg as WebVTT, then load as blob URL to avoid CORS
       console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
       if (result.success && result.url && videoRef.current) {
-        // Remove ALL existing track elements from the video
-        const existingTracks = videoRef.current.querySelectorAll('track');
-        existingTracks.forEach(t => t.remove());
-        // Create and add the WebVTT track
-        const track = document.createElement('track');
-        track.kind = 'subtitles';
-        track.label = subtitleTracks.find(t => t.id === trackId)?.label || `Subtitle ${trackId + 1}`;
-        track.srclang = subtitleTracks.find(t => t.id === trackId)?.lang || 'und';
-        track.src = result.url;
-        track.default = true;
-        videoRef.current.appendChild(track);
-        // Force-enable the track after it loads
-        track.addEventListener('load', () => {
-          console.log('[DashPlayer] Subtitle track loaded');
-          if (videoRef.current?.textTracks) {
-            for (let i = 0; i < videoRef.current.textTracks.length; i++) {
-              videoRef.current.textTracks[i].mode = 'showing';
-            }
+        try {
+          // Fetch the WebVTT data and create a blob URL
+          const resp = await fetch(result.url);
+          const vttText = await resp.text();
+          console.log('[DashPlayer] Subtitle WebVTT loaded, length:', vttText.length, 'preview:', vttText.substring(0, 100));
+          if (vttText.length < 20 || !vttText.includes('WEBVTT')) {
+            console.log('[DashPlayer] Subtitle data is empty or invalid');
+            return;
           }
-        });
-        // Also try enabling after delays (some browsers need this)
-        const enableTrack = () => {
-          if (videoRef.current?.textTracks) {
-            for (let i = 0; i < videoRef.current.textTracks.length; i++) {
-              videoRef.current.textTracks[i].mode = 'showing';
+          const blob = new Blob([vttText], { type: 'text/vtt' });
+          const blobUrl = URL.createObjectURL(blob);
+          // Remove ALL existing track elements
+          const existingTracks = videoRef.current.querySelectorAll('track');
+          existingTracks.forEach(t => {
+            if (t._blobUrl) URL.revokeObjectURL(t._blobUrl);
+            t.remove();
+          });
+          // Create and add the track
+          const track = document.createElement('track');
+          track.kind = 'subtitles';
+          track.label = subtitleTracks.find(t => t.id === trackId)?.label || `Subtitle ${trackId + 1}`;
+          track.srclang = subtitleTracks.find(t => t.id === trackId)?.lang || 'und';
+          track.src = blobUrl;
+          track._blobUrl = blobUrl;
+          track.default = true;
+          videoRef.current.appendChild(track);
+          // Enable the track
+          const enableTrack = () => {
+            if (videoRef.current?.textTracks) {
+              for (let i = 0; i < videoRef.current.textTracks.length; i++) {
+                videoRef.current.textTracks[i].mode = 'showing';
+              }
             }
-          }
-        };
-        setTimeout(enableTrack, 1000);
-        setTimeout(enableTrack, 3000);
+          };
+          track.addEventListener('load', () => { console.log('[DashPlayer] Subtitle track loaded'); enableTrack(); });
+          setTimeout(enableTrack, 500);
+          setTimeout(enableTrack, 2000);
+        } catch (fetchErr) {
+          console.log('[DashPlayer] Subtitle fetch error:', fetchErr);
+        }
       } else {
         console.log('[DashPlayer] FFmpeg subtitle URL failed:', result);
       }
