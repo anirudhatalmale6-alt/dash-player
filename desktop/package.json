@@ -23,7 +23,8 @@
       "preload.js",
       "app/**/*",
       "icon.ico",
-      "icon.png"
+      "icon.png",
+      "!node_modules/ffmpeg-static/**"
     ],
     "win": {
       "target": [

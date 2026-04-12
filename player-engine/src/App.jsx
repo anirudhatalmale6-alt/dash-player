@@ -904,6 +904,48 @@ function VideoPlayer({ url, onClose, title, inline }) {
     const trackDetectTimer = setTimeout(detectTracks, 2000);
     const trackDetectTimer2 = setTimeout(detectTracks, 5000);
 
+    // FFmpeg-based track probing for movies (detects embedded audio/subtitle tracks)
+    if (!isLive && window.dashPlayer?.ffmpegProbe) {
+      window.dashPlayer.ffmpegProbe({ url }).then(probeResult => {
+        if (!probeResult || !mountedRef.current) return;
+        console.log('[DashPlayer] FFmpeg probe result:', probeResult);
+        if (probeResult.type === 'ffprobe' && probeResult.streams) {
+          // Parse ffprobe JSON output
+          const audioStreams = probeResult.streams.filter(s => s.codec_type === 'audio');
+          const subStreams = probeResult.streams.filter(s => s.codec_type === 'subtitle');
+          if (audioStreams.length > 1) {
+            setAudioTracks(audioStreams.map((s, i) => ({
+              id: i, label: s.tags?.language || s.tags?.title || `Audio ${i + 1}`,
+              lang: s.tags?.language || '', codec: s.codec_name,
+            })));
+          }
+          if (subStreams.length > 0) {
+            setSubtitleTracks(subStreams.map((s, i) => ({
+              id: i, label: s.tags?.language || s.tags?.title || `Subtitle ${i + 1}`,
+              lang: s.tags?.language || '', codec: s.codec_name,
+            })));
+          }
+        } else if (probeResult.type === 'ffmpeg' && probeResult.raw) {
+          // Parse raw ffmpeg -i output
+          const lines = probeResult.raw.split('\n');
+          const aStreams = [], sStreams = [];
+          let audioIdx = 0, subIdx = 0;
+          for (const line of lines) {
+            const audioMatch = line.match(/Stream #\d+:(\d+).*Audio:\s*(\w+).*?(?:\((\w+)\))?/);
+            const subMatch = line.match(/Stream #\d+:(\d+).*Subtitle:\s*(\w+).*?(?:\((\w+)\))?/);
+            if (audioMatch) {
+              aStreams.push({ id: audioIdx++, label: audioMatch[3] || `Audio ${audioIdx}`, lang: audioMatch[3] || '', codec: audioMatch[2] });
+            }
+            if (subMatch) {
+              sStreams.push({ id: subIdx++, label: subMatch[3] || `Subtitle ${subIdx}`, lang: subMatch[3] || '', codec: subMatch[2] });
+            }
+          }
+          if (aStreams.length > 1) setAudioTracks(aStreams);
+          if (sStreams.length > 0) setSubtitleTracks(sStreams);
+        }
+      }).catch(e => console.log('[DashPlayer] FFmpeg probe error:', e));
+    }
+
     // Format chain: each format tried exactly once, short timeouts for fast switching
     let currentStep = 0;
     let playbackStarted = false;
@@ -1027,20 +1069,35 @@ function VideoPlayer({ url, onClose, title, inline }) {
       return true;
     };
 
+    // FFmpeg transcoding fallback - converts incompatible audio (MP2) to AAC
+    const tryFFmpegTranscode = async () => {
+      if (!window.dashPlayer?.ffmpegTranscodeUrl) return nextStep();
+      const transUrl = await window.dashPlayer.ffmpegTranscodeUrl({ url: isLive ? baseUrl + '.ts' : url });
+      if (!transUrl) return nextStep();
+      console.log('[DashPlayer] Trying FFmpeg transcode:', transUrl);
+      setCurrentFormat('FFmpeg');
+      // Play the transcoded stream via mpegts.js
+      if (!createMpegTsPlayer(transUrl, 'FFmpeg')) {
+        // If mpegts.js not supported, try direct
+        tryDirect(transUrl);
+      }
+    };
+
     // Build the format chain based on stream type
-    // For live: HLS → MPEG-TS → MPEG-TS(video-only, skips unsupported audio) → MPEG-TS(raw) → Direct
-    // For VOD: Direct → MPEG-TS → HLS → MPEG-TS(video-only)
+    // For live: HLS → MPEG-TS → MPEG-TS(video-only) → FFmpeg(transcode audio) → Direct
+    // For VOD: Direct → MPEG-TS → HLS → FFmpeg(transcode) → MPEG-TS(video-only)
     const rawUrl = baseUrl.replace(/\/live\//, '/'); // URL without /live/ prefix (VLC format)
     const steps = isLive ? [
       () => tryHls(baseUrl + '.m3u8'),
       () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'),
-      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS', true), // video-only (skip MP2 audio that Chrome can't decode)
-      () => createMpegTsPlayer(rawUrl, 'MPEG-TS (raw)', true),
+      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS', true), // video-only (skip MP2 audio)
+      () => tryFFmpegTranscode(), // FFmpeg converts MP2→AAC, full audio+video
       () => tryDirect(url),
     ] : [
       () => tryDirect(url),
       () => createMpegTsPlayer(url, 'MPEG-TS'),
       () => tryHls(baseUrl + '.m3u8'),
+      () => tryFFmpegTranscode(),
       () => createMpegTsPlayer(url, 'MPEG-TS', true), // video-only fallback
     ];
 
@@ -1061,31 +1118,71 @@ function VideoPlayer({ url, onClose, title, inline }) {
     return () => { clearTimeout(trackDetectTimer); clearTimeout(trackDetectTimer2); cleanup(); if (video) { video.src = ''; video.load(); } };
   }, [url]);
 
-  const handleAudioChange = (trackId) => {
+  const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
     if (hlsRef.current && hlsRef.current.audioTracks && hlsRef.current.audioTracks.length > 1) {
       hlsRef.current.audioTrack = trackId;
-    } else if (videoRef.current && videoRef.current.audioTracks) {
+    } else if (videoRef.current && videoRef.current.audioTracks && videoRef.current.audioTracks.length > 1) {
       for (let i = 0; i < videoRef.current.audioTracks.length; i++) {
         videoRef.current.audioTracks[i].enabled = (i === trackId);
+      }
+    } else if (window.dashPlayer?.ffmpegTranscodeUrl && url) {
+      // FFmpeg-based audio track switching for movies
+      const currentTime = videoRef.current?.currentTime || 0;
+      const transUrl = await window.dashPlayer.ffmpegTranscodeUrl({ url, audioTrack: trackId });
+      if (transUrl && videoRef.current) {
+        console.log('[DashPlayer] Switching to audio track', trackId, 'via FFmpeg');
+        videoRef.current.src = transUrl;
+        videoRef.current.currentTime = currentTime;
+        videoRef.current.play().catch(() => {});
       }
     }
   };
 
-  const handleSubtitleChange = (trackId) => {
+  const handleSubtitleChange = async (trackId) => {
     setSelectedSubtitle(trackId);
     setShowTrackMenu(null);
     if (hlsRef.current && hlsRef.current.subtitleTracks && hlsRef.current.subtitleTracks.length > 0) {
       hlsRef.current.subtitleTrack = trackId;
       hlsRef.current.subtitleDisplay = trackId >= 0;
-    }
-    if (videoRef.current && videoRef.current.textTracks) {
+    } else if (window.dashPlayer?.ffmpegSubtitleUrl && trackId >= 0) {
+      // FFmpeg-based subtitle extraction
+      const subUrl = await window.dashPlayer.ffmpegSubtitleUrl({ url, trackIndex: trackId });
+      if (subUrl && videoRef.current) {
+        console.log('[DashPlayer] Loading subtitle track', trackId, 'via FFmpeg:', subUrl);
+        // Remove existing track elements
+        const existing = videoRef.current.querySelectorAll?.('track') ||
+          videoRef.current.parentElement?.querySelectorAll('track') || [];
+        existing.forEach(t => t.remove());
+        // Add new track element
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.label = subtitleTracks[trackId]?.label || `Subtitle ${trackId + 1}`;
+        track.srclang = subtitleTracks[trackId]?.lang || 'und';
+        track.src = subUrl;
+        track.default = true;
+        videoRef.current.appendChild(track);
+        // Enable the track
+        setTimeout(() => {
+          if (videoRef.current?.textTracks) {
+            for (let i = 0; i < videoRef.current.textTracks.length; i++) {
+              videoRef.current.textTracks[i].mode = 'showing';
+            }
+          }
+        }, 500);
+      }
+    } else if (videoRef.current && videoRef.current.textTracks) {
       for (let i = 0; i < videoRef.current.textTracks.length; i++) {
         const t = videoRef.current.textTracks[i];
         if (t.kind === 'subtitles' || t.kind === 'captions') {
           t.mode = (i === trackId) ? 'showing' : 'disabled';
         }
+      }
+    }
+    if (trackId === -1 && videoRef.current?.textTracks) {
+      for (let i = 0; i < videoRef.current.textTracks.length; i++) {
+        videoRef.current.textTracks[i].mode = 'disabled';
       }
     }
   };
