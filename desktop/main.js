@@ -67,20 +67,43 @@ function ensureLocalServer() {
         // Extract subtitle track as WebVTT
         const subIndex = url.searchParams.get('subIndex') || '0';
         console.log(`[FFmpeg] Extracting subtitle track ${subIndex} from:`, sourceUrl);
-        res.writeHead(200, {
-          'Content-Type': 'text/vtt',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-cache',
-        });
         const proc = spawn(ffmpegPath, [
+          '-hide_banner', '-loglevel', 'warning',
           '-i', sourceUrl,
           '-map', `0:s:${subIndex}`,
+          '-c:s', 'webvtt',     // explicitly convert subtitle to WebVTT
           '-f', 'webvtt',
           'pipe:1',
         ], { stdio: ['pipe', 'pipe', 'pipe'] });
-        proc.stdout.pipe(res);
-        proc.stderr.on('data', (d) => console.log('[FFmpeg sub]', d.toString().trim()));
-        proc.on('error', () => { res.end(); });
+
+        let hasData = false;
+        let stderrLog = '';
+        proc.stdout.on('data', (chunk) => {
+          if (!hasData) {
+            hasData = true;
+            res.writeHead(200, {
+              'Content-Type': 'text/vtt; charset=utf-8',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'no-cache',
+            });
+          }
+          res.write(chunk);
+        });
+        proc.stderr.on('data', (d) => { stderrLog += d.toString(); });
+        proc.on('exit', (code) => {
+          if (!hasData) {
+            console.log('[FFmpeg sub] No subtitle data produced. stderr:', stderrLog.trim());
+            res.writeHead(200, { 'Content-Type': 'text/vtt', 'Access-Control-Allow-Origin': '*' });
+            res.end('WEBVTT\n\n'); // empty valid WebVTT
+          } else {
+            res.end();
+          }
+        });
+        proc.on('error', (e) => {
+          console.log('[FFmpeg sub] Process error:', e.message);
+          if (!hasData) { res.writeHead(500); }
+          res.end();
+        });
         req.on('close', () => { try { proc.kill(); } catch(e) {} });
         return;
       }
@@ -92,45 +115,72 @@ function ensureLocalServer() {
       const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
 
       const args = [
-        '-hide_banner', '-loglevel', 'warning',
+        '-hide_banner', '-loglevel', 'info',
         '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+        '-probesize', '10000000',      // 10MB probe for better stream detection
+        '-analyzeduration', '5000000', // 5 seconds analysis
         '-i', sourceUrl,
-        '-map', '0:v:0',
-        '-map', `0:a:${audioTrack}`,
-        '-c:v', 'copy',     // copy video (no re-encode)
-        '-c:a', 'aac',      // transcode audio to AAC (browser-compatible)
+        '-map', '0:v:0?',             // ? = optional, won't fail if missing
+        '-map', `0:a:${audioTrack}?`,
+        '-c:v', 'copy',               // copy video (no re-encode)
+        '-c:a', 'aac',                // transcode audio to AAC
         '-b:a', '192k',
         '-ac', '2',
-        '-f', 'mp4',        // fragmented MP4 - Chrome can play this directly
+        '-f', 'mp4',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1',
       ];
-
-      res.writeHead(200, {
-        'Content-Type': 'video/mp4',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      });
 
       ffmpegProcess = spawn(ffmpegPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      ffmpegProcess.stdout.pipe(res);
-      ffmpegProcess.stderr.on('data', (d) => {
-        const msg = d.toString().trim();
-        if (msg) console.log('[FFmpeg]', msg);
+      let headersSent = false;
+      let stderrBuf = '';
+
+      ffmpegProcess.stdout.on('data', (chunk) => {
+        if (!headersSent) {
+          headersSent = true;
+          console.log('[FFmpeg] First data received, streaming to browser');
+          res.writeHead(200, {
+            'Content-Type': 'video/mp4',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          });
+        }
+        try { res.write(chunk); } catch(e) {}
       });
+
+      ffmpegProcess.stderr.on('data', (d) => {
+        const msg = d.toString();
+        stderrBuf += msg;
+        // Log important lines (skip progress/stats)
+        const lines = msg.split('\n').filter(l => l.trim() && !l.includes('frame=') && !l.includes('size='));
+        lines.forEach(l => { if (l.trim()) console.log('[FFmpeg]', l.trim()); });
+      });
+
       ffmpegProcess.on('exit', (code) => {
         console.log('[FFmpeg] Process exited with code', code);
+        if (!headersSent) {
+          console.log('[FFmpeg] No output produced! stderr:', stderrBuf.slice(-500));
+          res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+          res.end('FFmpeg failed to produce output');
+        } else {
+          res.end();
+        }
         ffmpegProcess = null;
-        res.end();
       });
+
       ffmpegProcess.on('error', (err) => {
         console.log('[FFmpeg] Process error:', err.message);
+        if (!headersSent) {
+          res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+          res.end('FFmpeg error: ' + err.message);
+        } else {
+          res.end();
+        }
         ffmpegProcess = null;
-        res.end();
       });
 
       req.on('close', () => {

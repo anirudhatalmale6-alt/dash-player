@@ -1166,11 +1166,10 @@ function VideoPlayer({ url, onClose, title, inline }) {
       console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
       if (result.success && result.url && videoRef.current) {
-        // Remove existing track elements
-        const container = videoRef.current.parentElement || videoRef.current;
-        const existing = container.querySelectorAll('track');
-        existing.forEach(t => t.remove());
-        // Add WebVTT track
+        // Remove ALL existing track elements from the video
+        const existingTracks = videoRef.current.querySelectorAll('track');
+        existingTracks.forEach(t => t.remove());
+        // Create and add the WebVTT track
         const track = document.createElement('track');
         track.kind = 'subtitles';
         track.label = subtitleTracks.find(t => t.id === trackId)?.label || `Subtitle ${trackId + 1}`;
@@ -1178,13 +1177,27 @@ function VideoPlayer({ url, onClose, title, inline }) {
         track.src = result.url;
         track.default = true;
         videoRef.current.appendChild(track);
-        setTimeout(() => {
+        // Force-enable the track after it loads
+        track.addEventListener('load', () => {
+          console.log('[DashPlayer] Subtitle track loaded');
           if (videoRef.current?.textTracks) {
             for (let i = 0; i < videoRef.current.textTracks.length; i++) {
               videoRef.current.textTracks[i].mode = 'showing';
             }
           }
-        }, 500);
+        });
+        // Also try enabling after delays (some browsers need this)
+        const enableTrack = () => {
+          if (videoRef.current?.textTracks) {
+            for (let i = 0; i < videoRef.current.textTracks.length; i++) {
+              videoRef.current.textTracks[i].mode = 'showing';
+            }
+          }
+        };
+        setTimeout(enableTrack, 1000);
+        setTimeout(enableTrack, 3000);
+      } else {
+        console.log('[DashPlayer] FFmpeg subtitle URL failed:', result);
       }
     } else if (hlsRef.current && hlsRef.current.subtitleTracks && hlsRef.current.subtitleTracks.length > 0) {
       hlsRef.current.subtitleTrack = trackId;
