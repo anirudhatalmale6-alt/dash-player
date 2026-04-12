@@ -63,12 +63,13 @@ function createXtreamApi(url, username, password, outputFormat = 'm3u8') {
     try {
       const res = await axios.get(`${baseUrl}/player_api.php`, {
         params: { username, password, action, ...params },
-        headers: { 'User-Agent': 'DashPlayer/1.0' },
         timeout: 60000,
       });
+      // Some servers return HTML error pages (Cloudflare etc.)
+      if (typeof res.data === 'string' && res.data.includes('<!DOCTYPE')) return null;
       return res.data;
     } catch (e) {
-      console.warn('Xtream API error:', e.message);
+      console.warn('Xtream API error:', action, e.message);
       return null;
     }
   };
@@ -1750,7 +1751,10 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
       <div className="section-header">
         <button className="back-btn" onClick={onBack}>&#8592; Home</button>
         <h1 className="section-title">Playlists</h1>
-        <button className="settings-btn settings-btn-primary" onClick={() => { resetForm(); setShowAdd(true); }} style={{ marginLeft: 'auto' }}>
+        <button className="settings-btn settings-btn-secondary" onClick={() => setPlaylists(getPlaylists())} style={{ marginLeft: 'auto' }}>
+          Refresh
+        </button>
+        <button className="settings-btn settings-btn-primary" onClick={() => { resetForm(); setShowAdd(true); }} style={{ marginLeft: 8 }}>
           + Add Playlist
         </button>
       </div>
@@ -3029,7 +3033,34 @@ function MultiScreenScreen({ onBack, api }) {
 
 /* ── Player license helper ── */
 function getPlayerLicense() {
+  // Default to trial, will be updated from backend
   return { type: 'trial', expiresAt: null, trialDaysLeft: 15 };
+}
+
+async function fetchPlayerLicense() {
+  try {
+    const device = getDeviceIdentity();
+    const res = await axios.post('https://management.dashplayer.eu/api/device/lookup', {
+      mac_address: device.mac,
+      device_key: device.key,
+    });
+    const d = res.data?.device;
+    if (!d) return null;
+    const licType = d.license_type || 'trial';
+    if (licType === 'unlimited') return { type: 'unlimited', expiresAt: null, trialDaysLeft: 0 };
+    if (licType === 'yearly') {
+      const expires = d.license_expires_at ? new Date(d.license_expires_at) : null;
+      const daysLeft = expires ? Math.ceil((expires - new Date()) / (1000*60*60*24)) : 365;
+      return { type: daysLeft > 0 ? 'yearly' : 'expired', expiresAt: d.license_expires_at, trialDaysLeft: 0 };
+    }
+    // Trial
+    const created = new Date(d.created_at);
+    const daysSinceCreated = Math.floor((new Date() - created) / (1000*60*60*24));
+    const trialDays = 7;
+    return { type: 'trial', expiresAt: null, trialDaysLeft: Math.max(0, trialDays - daysSinceCreated) };
+  } catch (e) {
+    return null;
+  }
 }
 
 function getPlayerStatusText(license) {
@@ -3046,7 +3077,7 @@ function getPlayerStatusText(license) {
 export default function App() {
   const [credentials, setCredentials] = useState(null);
   const [screen, setScreen] = useState('home');
-  const [playerLicense] = useState(() => getPlayerLicense());
+  const [playerLicense, setPlayerLicense] = useState(() => getPlayerLicense());
   const [api, setApi] = useState(null);
   const [contentStats, setContentStats] = useState({ live: 0, vod: 0, series: 0 });
 
@@ -3056,6 +3087,13 @@ export default function App() {
       setApi(createXtreamApi(credentials.url, credentials.username, credentials.password, format));
     }
   }, [credentials]);
+
+  // Fetch license from backend
+  useEffect(() => {
+    fetchPlayerLicense().then(lic => {
+      if (lic) setPlayerLicense(lic);
+    });
+  }, []);
 
   // Re-apply VPN proxy on startup (Electron only)
   useEffect(() => {
@@ -3104,6 +3142,9 @@ export default function App() {
   };
 
   const handleSwitchPlaylist = (creds) => {
+    // Force full reload by clearing state first
+    setApi(null);
+    setContentStats({ live: 0, vod: 0, series: 0 });
     setCredentials(creds);
     setScreen('home');
   };

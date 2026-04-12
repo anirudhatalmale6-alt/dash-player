@@ -24,7 +24,7 @@ db.exec(`
     mac_address TEXT NOT NULL,
     device_key TEXT NOT NULL UNIQUE,
     name TEXT DEFAULT '',
-    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'blocked')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'blocked', 'expired', 'trial')),
     license_type TEXT DEFAULT 'trial' CHECK(license_type IN ('trial', 'yearly', 'unlimited')),
     license_expires_at TEXT,
     playlist_url TEXT DEFAULT '',

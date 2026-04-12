@@ -22,12 +22,6 @@ function createWindow() {
     },
   });
 
-  // Set user agent for all requests
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    details.requestHeaders['User-Agent'] = USER_AGENT;
-    callback({ cancel: false, requestHeaders: details.requestHeaders });
-  });
-
   // Load the built React app
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
 
