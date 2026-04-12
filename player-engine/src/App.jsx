@@ -1764,7 +1764,7 @@ function RadioScreen({ onBack, api }) {
     setRadioError(null);
     setPlayingUrl(null);
 
-    // Try radio-specific URLs (mp3 via /radio/ path, then /live/ path)
+    // Try radio-specific MP3 URLs first (HTML5 Audio), then fall back to VideoPlayer for .ts streams
     const urls = api.getRadioUrls(station.stream_id);
     let tried = 0;
     let settled = false;
@@ -1772,9 +1772,12 @@ function RadioScreen({ onBack, api }) {
     const tryUrl = () => {
       if (settled) return;
       if (tried >= urls.length) {
+        // All audio URLs failed - fall back to VideoPlayer (for .ts/.m3u8 radio streams)
         settled = true;
+        console.log('[DashPlayer] Audio URLs failed, falling back to VideoPlayer for radio');
         setRadioLoading(false);
-        setRadioError('Stream unavailable');
+        const liveUrl = api.getLiveUrl(station.stream_id);
+        setPlayingUrl(liveUrl);
         return;
       }
       const url = urls[tried++];
@@ -1806,8 +1809,8 @@ function RadioScreen({ onBack, api }) {
 
       audio.addEventListener('error', () => { onFail(); }, { once: true });
 
-      // Timeout: if no canplay/error after 8 seconds, try next
-      setTimeout(() => { if (!settled && audio === audioRef.current && audio.readyState < 2) onFail(); }, 8000);
+      // Quick timeout: 4 seconds per URL, so fallback happens fast
+      setTimeout(() => { if (!settled && audio === audioRef.current && audio.readyState < 2) onFail(); }, 4000);
 
       audio.src = url;
       audio.load();
@@ -1878,7 +1881,8 @@ function RadioScreen({ onBack, api }) {
           </div>
         </div>
       )}
-      {/* No VideoPlayer fallback for radio - all radio uses HTML5 audio */}
+      {/* VideoPlayer fallback for radio streams that don't support MP3 (e.g. .ts streams) */}
+      {playingUrl && <VideoPlayer url={playingUrl} title={playing?.name || 'Radio'} onClose={() => { handleStop(); }} />}
     </div>
   );
 }
