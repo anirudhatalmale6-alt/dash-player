@@ -1326,37 +1326,7 @@ function MediaScreen({ type, onBack, api }) {
 
 /* ══════ RADIO SCREEN ══════ */
 function RadioScreen({ onBack, api }) {
-  const staticRadioCategories = [
-    { id: 'all', name: 'All Stations' }, { id: 'pop', name: 'Pop' }, { id: 'rock', name: 'Rock' },
-    { id: 'jazz', name: 'Jazz' }, { id: 'classical', name: 'Classical' }, { id: 'hiphop', name: 'Hip Hop' },
-    { id: 'electronic', name: 'Electronic' }, { id: 'country', name: 'Country' }, { id: 'news', name: 'News & Talk' },
-  ];
-  const staticRadioStations = [
-    { id: 1, name: 'BBC Radio 1', cat: 'pop', genre: 'Pop & Chart' },
-    { id: 2, name: 'Capital FM', cat: 'pop', genre: 'Pop Hits' },
-    { id: 3, name: 'Kiss FM', cat: 'pop', genre: 'Dance & Pop' },
-    { id: 4, name: 'Heart Radio', cat: 'pop', genre: 'Feel Good Hits' },
-    { id: 5, name: 'Radio X', cat: 'rock', genre: 'Alternative Rock' },
-    { id: 6, name: 'Planet Rock', cat: 'rock', genre: 'Classic Rock' },
-    { id: 7, name: 'Kerrang Radio', cat: 'rock', genre: 'Rock & Metal' },
-    { id: 8, name: 'Absolute Rock', cat: 'rock', genre: 'Rock Hits' },
-    { id: 9, name: 'Jazz FM', cat: 'jazz', genre: 'Smooth Jazz' },
-    { id: 10, name: 'Smooth Jazz 24/7', cat: 'jazz', genre: 'Jazz Lounge' },
-    { id: 11, name: 'Blue Note Radio', cat: 'jazz', genre: 'Jazz Classics' },
-    { id: 12, name: 'Classic FM', cat: 'classical', genre: 'Classical Music' },
-    { id: 13, name: 'BBC Radio 3', cat: 'classical', genre: 'Classical & Arts' },
-    { id: 14, name: 'Scala Radio', cat: 'classical', genre: 'Modern Classical' },
-    { id: 15, name: 'Power 105.1', cat: 'hiphop', genre: 'Hip Hop & R&B' },
-    { id: 16, name: 'Hot 97', cat: 'hiphop', genre: 'Hip Hop Hits' },
-    { id: 17, name: 'Rinse FM', cat: 'electronic', genre: 'Electronic & Dance' },
-    { id: 18, name: 'Ministry of Sound', cat: 'electronic', genre: 'House & EDM' },
-    { id: 19, name: 'BBC Radio 4', cat: 'news', genre: 'News & Documentaries' },
-    { id: 20, name: 'LBC Radio', cat: 'news', genre: 'Talk & Debate' },
-    { id: 21, name: 'NPR Radio', cat: 'news', genre: 'Public Radio' },
-    { id: 22, name: 'Country Hits Radio', cat: 'country', genre: 'Country Music' },
-    { id: 23, name: 'The Highway', cat: 'country', genre: 'New Country' },
-    { id: 24, name: 'Willie\'s Roadhouse', cat: 'country', genre: 'Classic Country' },
-  ];
+  // No static radio stations - only show real streams from Xtream API
 
   const [selectedCat, setSelectedCat] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1400,30 +1370,17 @@ function RadioScreen({ onBack, api }) {
     return () => { cancelled = true; };
   }, [api]);
 
-  // Display categories and stations
-  const displayCategories = usingApi ? apiCategories : staticRadioCategories;
-  const displayStations = usingApi ? apiStations : staticRadioStations;
-
-  const filtered = usingApi
-    ? displayStations.filter(s => {
-        const matchCat = selectedCat === 'all' || String(s.category_id) === String(selectedCat);
-        const matchSearch = !searchQuery || (s.name || '').toLowerCase().includes(searchQuery.toLowerCase());
-        return matchCat && matchSearch;
-      })
-    : displayStations.filter(s => {
-        const matchCat = selectedCat === 'all' || s.cat === selectedCat;
-        const matchSearch = !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchCat && matchSearch;
-      });
+  const filtered = apiStations.filter(s => {
+    const matchCat = selectedCat === 'all' || String(s.category_id) === String(selectedCat);
+    const matchSearch = !searchQuery || (s.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchCat && matchSearch;
+  });
 
   const handlePlay = (station) => {
-    if (usingApi && api) {
+    if (api) {
       const url = api.getLiveUrl(station.stream_id);
       setPlaying(station);
       setPlayingUrl(url);
-    } else {
-      setPlaying(station);
-      setPlayingUrl(null);
     }
   };
 
@@ -1438,24 +1395,23 @@ function RadioScreen({ onBack, api }) {
         <div className="section-sidebar">
           <div className="sidebar-search"><input placeholder="Search stations..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
           <div className="sidebar-categories">
-            {usingApi
-              ? apiCategories.map(cat => (
-                  <div key={cat.category_id} className={`sidebar-cat-item ${String(selectedCat) === String(cat.category_id) ? 'active' : ''}`} onClick={() => setSelectedCat(cat.category_id)}>
-                    <span>{cat.category_name}</span>
-                    <span className="sidebar-cat-count">{cat.category_id === 'all' ? apiStations.length : apiStations.filter(s => String(s.category_id) === String(cat.category_id)).length}</span>
-                  </div>
-                ))
-              : staticRadioCategories.map(cat => (
-                  <div key={cat.id} className={`sidebar-cat-item ${selectedCat === cat.id ? 'active' : ''}`} onClick={() => setSelectedCat(cat.id)}>
-                    <span>{cat.name}</span>
-                    <span className="sidebar-cat-count">{cat.id === 'all' ? staticRadioStations.length : staticRadioStations.filter(s => s.cat === cat.id).length}</span>
-                  </div>
-                ))
-            }
+            {apiCategories.map(cat => (
+              <div key={cat.category_id} className={`sidebar-cat-item ${String(selectedCat) === String(cat.category_id) ? 'active' : ''}`} onClick={() => setSelectedCat(cat.category_id)}>
+                <span>{cat.category_name}</span>
+                <span className="sidebar-cat-count">{cat.category_id === 'all' ? apiStations.length : apiStations.filter(s => String(s.category_id) === String(cat.category_id)).length}</span>
+              </div>
+            ))}
           </div>
         </div>
         <div className="radio-grid">
           {loading && <div className="loading-indicator" style={{ gridColumn: '1/-1' }}>Loading radio stations...</div>}
+          {!loading && apiStations.length === 0 && (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px 20px', opacity: 0.6 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>&#127911;</div>
+              <h3>No Radio Streams</h3>
+              <p>This server does not have radio categories available.</p>
+            </div>
+          )}
           {!loading && filtered.map(station => (
             <div key={station.stream_id || station.id} className={`radio-card ${playing?.stream_id === station.stream_id && playing?.id === station.id ? 'playing' : ''}`} onClick={() => handlePlay(station)}>
               {station.stream_icon ? <img src={station.stream_icon} alt="" className="radio-icon" style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 8, background: '#1a1a2e' }} onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} /> : null}
@@ -1978,6 +1934,10 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
     if (pl.pin) {
       setPinPrompt({ playlistId: pl.id, pin: '', error: '' });
     } else {
+      // Also set as default when switching
+      const updated = playlists.map(p => ({ ...p, is_default: p.id === pl.id }));
+      savePlaylists(updated);
+      setPlaylists(updated);
       if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password, output_format: pl.output_format || 'm3u8' });
     }
   };
@@ -1988,6 +1948,10 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
     if (!pl) return;
     if (pinPrompt.pin === pl.pin) {
       setPinPrompt(null);
+      // Also set as default when switching via PIN
+      const updated = playlists.map(p => ({ ...p, is_default: p.id === pl.id }));
+      savePlaylists(updated);
+      setPlaylists(updated);
       if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password, output_format: pl.output_format || 'm3u8' });
     } else {
       setPinPrompt({ ...pinPrompt, error: 'Incorrect PIN. Please try again.' });
@@ -2952,7 +2916,15 @@ function EPGGridScreen({ onBack, api }) {
       setLoading(true);
       const streams = await api.getLiveStreams(selectedCategory);
       if (!cancelled && streams && Array.isArray(streams)) {
-        const limited = streams.slice(0, 30);
+        // Deduplicate channels by name (some servers return same channel multiple times)
+        const seenNames = new Set();
+        const uniqueStreams = streams.filter(s => {
+          const key = (s.name || '').toLowerCase().trim();
+          if (seenNames.has(key)) return false;
+          seenNames.add(key);
+          return true;
+        });
+        const limited = uniqueStreams.slice(0, 30);
         setChannels(limited);
         const epgMap = {};
         // Deduplicate and sort EPG entries - aggressive dedup

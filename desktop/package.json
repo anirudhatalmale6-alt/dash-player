@@ -21,7 +21,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "app/**/*"
+      "app/**/*",
+      "icon.ico",
+      "icon.png"
     ],
     "win": {
       "target": [
