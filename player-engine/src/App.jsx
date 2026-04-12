@@ -909,12 +909,26 @@ function VideoPlayer({ url, onClose, title, inline }) {
       hlsRef.current = hls;
       hls.loadSource(hlsUrl);
       hls.attachMedia(video);
+      let hlsPlaying = false;
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (!mountedRef.current) return;
         setLoading(false);
         video.play().catch(() => {});
         setupStallDetection();
+        // Check if video actually renders frames after 5 seconds
+        if (isLive) {
+          setTimeout(() => {
+            if (!mountedRef.current || hlsPlaying) return;
+            if (video && video.currentTime < 0.5 && video.readyState < 3 && !triedMpegTs) {
+              console.log('[DashPlayer] HLS connected but no video frames, trying MPEG-TS');
+              cleanup();
+              tryMpegTs(baseUrl + '.ts');
+            }
+          }, 5000);
+        }
       });
+      video.addEventListener('playing', () => { hlsPlaying = true; }, { once: true });
+      video.addEventListener('timeupdate', () => { if (video.currentTime > 0.5) hlsPlaying = true; }, { once: true });
       let hlsErrorTriggered = false;
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal && !hlsErrorTriggered) {
