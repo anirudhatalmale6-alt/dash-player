@@ -1157,6 +1157,13 @@ function SettingsScreen({ onBack, api }) {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('account');
   const [accountInfo, setAccountInfo] = useState({ status: 'Active', expDate: 'Unlimited', maxConnections: 1, activeCons: 0, username: 'N/A', createdAt: 'N/A', isTrial: false });
+  const [vpnEnabled, setVpnEnabled] = useState(() => localStorage.getItem('dash_vpn_enabled') === 'true');
+  const [vpnProtocol, setVpnProtocol] = useState(() => localStorage.getItem('dash_vpn_protocol') || 'openvpn');
+  const [vpnServer, setVpnServer] = useState(() => localStorage.getItem('dash_vpn_server') || '');
+  const [vpnPort, setVpnPort] = useState(() => localStorage.getItem('dash_vpn_port') || '');
+  const [vpnUsername, setVpnUsername] = useState(() => localStorage.getItem('dash_vpn_username') || '');
+  const [vpnPassword, setVpnPassword] = useState(() => localStorage.getItem('dash_vpn_password') || '');
+  const [vpnMsg, setVpnMsg] = useState('');
 
   useEffect(() => {
     if (api) {
@@ -1194,6 +1201,17 @@ function SettingsScreen({ onBack, api }) {
     setTimeout(() => setPinMsg(''), 3000);
   };
 
+  const handleVpnSave = () => {
+    localStorage.setItem('dash_vpn_enabled', vpnEnabled.toString());
+    localStorage.setItem('dash_vpn_protocol', vpnProtocol);
+    localStorage.setItem('dash_vpn_server', vpnServer);
+    localStorage.setItem('dash_vpn_port', vpnPort);
+    localStorage.setItem('dash_vpn_username', vpnUsername);
+    localStorage.setItem('dash_vpn_password', vpnPassword);
+    setVpnMsg('VPN settings saved successfully!');
+    setTimeout(() => setVpnMsg(''), 3000);
+  };
+
   const handleResetDeviceKey = () => {
     const newKey = Array.from({ length: 16 }, () => '0123456789ABCDEF'[Math.floor(Math.random() * 16)]).join('');
     const newDevice = { ...device, key: newKey };
@@ -1206,6 +1224,7 @@ function SettingsScreen({ onBack, api }) {
   const tabs = [
     { id: 'account', label: 'Account', icon: '\u{1F464}' },
     { id: 'parental', label: 'Parental Control', icon: '\u{1F512}' },
+    { id: 'vpn', label: 'VPN', icon: '\u{1F6E1}' },
     { id: 'device', label: 'Device Info', icon: '\u{1F4F1}' },
     { id: 'about', label: 'About', icon: '\u{2139}' },
   ];
@@ -1288,6 +1307,104 @@ function SettingsScreen({ onBack, api }) {
                   </div>
                 )}
                 {pinMsg && <p className={`settings-msg ${pinMsg.includes('successfully') ? 'success' : pinMsg.includes('disabled') ? 'info' : 'error'}`}>{pinMsg}</p>}
+              </div>
+            </div>
+          )}
+          {activeTab === 'vpn' && (
+            <div className="settings-panel">
+              <div className="settings-card">
+                <h3 className="settings-card-title">VPN Configuration</h3>
+                <p className="settings-card-desc">Configure VPN to secure your connection. Enable VPN and select your preferred protocol.</p>
+                <div className="settings-status">
+                  <span>VPN Status:</span>
+                  <span className={`settings-badge ${vpnEnabled ? 'active' : 'inactive'}`}>
+                    {vpnEnabled ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>Enable VPN</span>
+                  <button
+                    className={`settings-btn ${vpnEnabled ? 'settings-btn-danger' : 'settings-btn-primary'}`}
+                    onClick={() => { setVpnEnabled(!vpnEnabled); }}
+                  >
+                    {vpnEnabled ? 'Disable' : 'Enable'}
+                  </button>
+                </div>
+              </div>
+              <div className="settings-card">
+                <h3 className="settings-card-title">Protocol & Server</h3>
+                <p className="settings-card-desc">Choose your VPN protocol and enter server details.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Protocol</label>
+                    <select
+                      value={vpnProtocol}
+                      onChange={e => setVpnProtocol(e.target.value)}
+                      className="header-sort-select"
+                      style={{ width: '100%', padding: '10px 14px', fontSize: 13 }}
+                    >
+                      <option value="openvpn">OpenVPN (UDP)</option>
+                      <option value="openvpn_tcp">OpenVPN (TCP)</option>
+                      <option value="wireguard">WireGuard</option>
+                      <option value="ikev2">IKEv2/IPSec</option>
+                      <option value="l2tp">L2TP/IPSec</option>
+                      <option value="pptp">PPTP</option>
+                      <option value="shadowsocks">Shadowsocks</option>
+                      <option value="softether">SoftEther</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Server Address</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., vpn.example.com"
+                      value={vpnServer}
+                      onChange={e => setVpnServer(e.target.value)}
+                      className="quick-connect-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Port</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., 1194"
+                      value={vpnPort}
+                      onChange={e => setVpnPort(e.target.value)}
+                      className="quick-connect-input"
+                      style={{ width: 150 }}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="settings-card">
+                <h3 className="settings-card-title">Authentication</h3>
+                <p className="settings-card-desc">Enter your VPN credentials if required.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Username</label>
+                    <input
+                      type="text"
+                      placeholder="VPN username"
+                      value={vpnUsername}
+                      onChange={e => setVpnUsername(e.target.value)}
+                      className="quick-connect-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Password</label>
+                    <input
+                      type="password"
+                      placeholder="VPN password"
+                      value={vpnPassword}
+                      onChange={e => setVpnPassword(e.target.value)}
+                      className="quick-connect-input"
+                    />
+                  </div>
+                </div>
+                <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
+                  <button className="settings-btn settings-btn-primary" onClick={handleVpnSave}>Save VPN Settings</button>
+                </div>
+                {vpnMsg && <p className="settings-msg success">{vpnMsg}</p>}
               </div>
             </div>
           )}
