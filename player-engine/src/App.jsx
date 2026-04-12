@@ -1207,7 +1207,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           // Fetch the WebVTT data with timeout (FFmpeg subtitle extraction can be slow)
           console.log('[DashPlayer] Fetching subtitle from:', result.url);
           const controller = new AbortController();
-          const fetchTimeout = setTimeout(() => controller.abort(), 35000); // 35s timeout
+          const fetchTimeout = setTimeout(() => controller.abort(), 95000); // 95s timeout (subtitle extraction can be slow for large files)
           const resp = await fetch(result.url, { signal: controller.signal });
           clearTimeout(fetchTimeout);
           const vttText = await resp.text();
