@@ -23,6 +23,26 @@ function isFavorite(type, id) {
   return getFavorites(type).includes(id);
 }
 
+/* ── Playlist management helper (localStorage) ── */
+function getPlaylists() {
+  try { return JSON.parse(localStorage.getItem('dash_playlists') || '[]'); } catch { return []; }
+}
+function savePlaylists(playlists) {
+  localStorage.setItem('dash_playlists', JSON.stringify(playlists));
+}
+function getDefaultPlaylist() {
+  const pls = getPlaylists();
+  return pls.find(p => p.is_default) || pls[0] || null;
+}
+
+/* ── Custom groups helper (persisted in localStorage) ── */
+function getCustomGroups() {
+  try { return JSON.parse(localStorage.getItem('dash_custom_groups') || '[]'); } catch { return []; }
+}
+function saveCustomGroups(groups) {
+  localStorage.setItem('dash_custom_groups', JSON.stringify(groups));
+}
+
 /* ── Watch history helper ── */
 function getWatchHistory() {
   try { return JSON.parse(localStorage.getItem('dash_history') || '[]'); } catch { return []; }
@@ -587,6 +607,10 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
           <div className="home-card-sm" onClick={() => onNavigate('multiscreen')}>
             <span className="home-card-sm-icon">&#9638;</span>
             <span>Multi Screen</span>
+          </div>
+          <div className="home-card-sm" onClick={() => onNavigate('playlists')}>
+            <span className="home-card-sm-icon">&#128220;</span>
+            <span>Playlists</span>
           </div>
           <div className="home-card-sm" onClick={() => onNavigate('settings')}>
             <span className="home-card-sm-icon">&#9881;</span>
@@ -1491,6 +1515,196 @@ function SettingsScreen({ onBack, api }) {
   );
 }
 
+/* ══════ PLAYLISTS SCREEN ══════ */
+function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
+  const [playlists, setPlaylists] = useState(() => getPlaylists());
+  const [showAdd, setShowAdd] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [name, setName] = useState('');
+  const [serverUrl, setServerUrl] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [m3uInput, setM3uInput] = useState('');
+  const [msg, setMsg] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
+  const parseM3uUrl = (url) => {
+    try {
+      const u = new URL(url);
+      const user = u.searchParams.get('username');
+      const pass = u.searchParams.get('password');
+      if (user && pass) return { url: `${u.protocol}//${u.host}`, username: user, password: pass };
+    } catch {}
+    return null;
+  };
+
+  const handleM3uPaste = (val) => {
+    setM3uInput(val);
+    const parsed = parseM3uUrl(val.trim());
+    if (parsed) {
+      setServerUrl(parsed.url);
+      setUsername(parsed.username);
+      setPassword(parsed.password);
+    }
+  };
+
+  const resetForm = () => {
+    setName(''); setServerUrl(''); setUsername(''); setPassword(''); setM3uInput('');
+    setShowAdd(false); setEditId(null);
+  };
+
+  const handleSave = () => {
+    if (!serverUrl || !username || !password) {
+      setMsg('Server URL, username, and password are required');
+      setTimeout(() => setMsg(''), 3000);
+      return;
+    }
+    let updated;
+    if (editId !== null) {
+      updated = playlists.map(p => p.id === editId ? { ...p, name: name || 'My Playlist', server_url: serverUrl, username, password } : p);
+    } else {
+      const newId = Date.now();
+      const isDefault = playlists.length === 0 ? true : false;
+      updated = [...playlists, { id: newId, name: name || 'My Playlist', server_url: serverUrl, username, password, is_default: isDefault }];
+    }
+    savePlaylists(updated);
+    setPlaylists(updated);
+    resetForm();
+    setMsg(editId !== null ? 'Playlist updated!' : 'Playlist added!');
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const handleEdit = (pl) => {
+    setEditId(pl.id);
+    setName(pl.name);
+    setServerUrl(pl.server_url);
+    setUsername(pl.username);
+    setPassword(pl.password);
+    setShowAdd(true);
+  };
+
+  const handleDelete = (id) => {
+    let updated = playlists.filter(p => p.id !== id);
+    if (updated.length > 0 && !updated.find(p => p.is_default)) {
+      updated[0].is_default = true;
+    }
+    savePlaylists(updated);
+    setPlaylists(updated);
+    setConfirmDelete(null);
+    setMsg('Playlist deleted');
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const handleSetDefault = (id) => {
+    const updated = playlists.map(p => ({ ...p, is_default: p.id === id }));
+    savePlaylists(updated);
+    setPlaylists(updated);
+    const pl = updated.find(p => p.id === id);
+    if (pl && onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+    setMsg('Default playlist changed');
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const handleSwitchTo = (pl) => {
+    if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+  };
+
+  return (
+    <div className="section-screen">
+      <div className="section-header">
+        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <h1 className="section-title">Playlists</h1>
+        <button className="settings-btn settings-btn-primary" onClick={() => { resetForm(); setShowAdd(true); }} style={{ marginLeft: 'auto' }}>
+          + Add Playlist
+        </button>
+      </div>
+      <div className="playlists-content" style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+        {msg && <div className="settings-msg success" style={{ marginBottom: 16 }}>{msg}</div>}
+
+        {showAdd && (
+          <div className="settings-card" style={{ marginBottom: 20 }}>
+            <h3 className="settings-card-title">{editId !== null ? 'Edit Playlist' : 'Add New Playlist'}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Paste M3U URL (optional)</label>
+                <input className="quick-connect-input" placeholder="http://server:port/get.php?username=...&password=..." value={m3uInput} onChange={e => handleM3uPaste(e.target.value)} />
+              </div>
+              <div>
+                <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Playlist Name</label>
+                <input className="quick-connect-input" placeholder="My Playlist" value={name} onChange={e => setName(e.target.value)} />
+              </div>
+              <div>
+                <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Server URL</label>
+                <input className="quick-connect-input" placeholder="http://server:port" value={serverUrl} onChange={e => setServerUrl(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Username</label>
+                  <input className="quick-connect-input" placeholder="username" value={username} onChange={e => setUsername(e.target.value)} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Password</label>
+                  <input className="quick-connect-input" placeholder="password" value={password} onChange={e => setPassword(e.target.value)} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button className="settings-btn settings-btn-primary" onClick={handleSave}>{editId !== null ? 'Update' : 'Add Playlist'}</button>
+                <button className="settings-btn settings-btn-secondary" onClick={resetForm}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {playlists.length === 0 && !showAdd && (
+          <div className="settings-card" style={{ textAlign: 'center', padding: 40 }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>&#128220;</div>
+            <h3 className="settings-card-title">No Playlists Yet</h3>
+            <p className="settings-card-desc">Add your first IPTV playlist to get started.</p>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+          {playlists.map(pl => {
+            const isActive = activePlaylist && activePlaylist.url === pl.server_url && activePlaylist.username === pl.username;
+            return (
+              <div key={pl.id} className="settings-card" style={{ position: 'relative', border: pl.is_default ? '2px solid #8b5cf6' : undefined }}>
+                {pl.is_default && (
+                  <span style={{ position: 'absolute', top: 10, right: 12, background: '#8b5cf6', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>DEFAULT</span>
+                )}
+                {isActive && !pl.is_default && (
+                  <span style={{ position: 'absolute', top: 10, right: 12, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>ACTIVE</span>
+                )}
+                <h3 className="settings-card-title" style={{ marginBottom: 8 }}>{pl.name || 'My Playlist'}</h3>
+                <div className="settings-device-info" style={{ marginBottom: 12 }}>
+                  <div className="settings-device-row"><span className="settings-device-label">Server</span><span className="settings-device-value" style={{ wordBreak: 'break-all' }}>{pl.server_url}</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">Username</span><span className="settings-device-value">{pl.username}</span></div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {!isActive && (
+                    <button className="settings-btn settings-btn-primary" onClick={() => handleSwitchTo(pl)} style={{ fontSize: 12 }}>Switch To</button>
+                  )}
+                  {!pl.is_default && (
+                    <button className="settings-btn settings-btn-secondary" onClick={() => handleSetDefault(pl.id)} style={{ fontSize: 12 }}>Set Default</button>
+                  )}
+                  <button className="settings-btn settings-btn-secondary" onClick={() => handleEdit(pl)} style={{ fontSize: 12 }}>Edit</button>
+                  {confirmDelete === pl.id ? (
+                    <>
+                      <button className="settings-btn settings-btn-danger" onClick={() => handleDelete(pl.id)} style={{ fontSize: 12 }}>Confirm</button>
+                      <button className="settings-btn settings-btn-secondary" onClick={() => setConfirmDelete(null)} style={{ fontSize: 12 }}>Cancel</button>
+                    </>
+                  ) : (
+                    <button className="settings-btn settings-btn-danger" onClick={() => setConfirmDelete(pl.id)} style={{ fontSize: 12 }}>Delete</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ══════ TRIAL EXPIRED SCREEN ══════ */
 function TrialExpiredScreen() {
   const [device] = useState(() => getDeviceIdentity());
@@ -1525,19 +1739,142 @@ function TrialExpiredScreen() {
 }
 
 /* ══════ FAVORITES SCREEN ══════ */
-function FavoritesScreen({ onBack, api }) {
+function FavoritesScreen({ onBack, api, onNavigate }) {
   const [activeTab, setActiveTab] = useState('live');
   const [playingItem, setPlayingItem] = useState(null);
+  const [groups, setGroups] = useState(() => getCustomGroups());
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [editGroupId, setEditGroupId] = useState(null);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(null);
+  const [liveChannels, setLiveChannels] = useState([]);
+  const [vodItems, setVodItems] = useState([]);
+  const [seriesItems, setSeriesItems] = useState([]);
+  const [loadedFavs, setLoadedFavs] = useState(false);
   const history = getWatchHistory();
-  const tabs = [
-    { id: 'live', label: 'Live TV', icon: '&#128250;' },
-    { id: 'vod', label: 'Movies', icon: '&#127910;' },
-    { id: 'series', label: 'Series', icon: '&#127916;' },
-    { id: 'history', label: 'Recently Watched', icon: '&#128340;' },
-  ];
+
   const liveFavs = getFavorites('live');
   const vodFavs = getFavorites('vod');
   const seriesFavs = getFavorites('series');
+
+  // Load favorite items from API
+  useEffect(() => {
+    if (!api || loadedFavs) return;
+    const load = async () => {
+      if (liveFavs.length > 0) {
+        const all = await api.getLiveStreams();
+        if (all && Array.isArray(all)) setLiveChannels(all.filter(ch => liveFavs.includes(ch.stream_id || ch.num)));
+      }
+      if (vodFavs.length > 0) {
+        const all = await api.getVodStreams();
+        if (all && Array.isArray(all)) setVodItems(all.filter(v => vodFavs.includes(v.stream_id || v.num)));
+      }
+      if (seriesFavs.length > 0) {
+        const all = await api.getSeries();
+        if (all && Array.isArray(all)) setSeriesItems(all.filter(s => seriesFavs.includes(s.series_id)));
+      }
+      setLoadedFavs(true);
+    };
+    load();
+  }, [api, loadedFavs]);
+
+  const tabs = [
+    { id: 'live', label: 'Live TV', icon: '\u{1F4FA}' },
+    { id: 'vod', label: 'Movies', icon: '\u{1F3AC}' },
+    { id: 'series', label: 'Series', icon: '\u{1F3A5}' },
+    { id: 'history', label: 'Recently Watched', icon: '\u{1F554}' },
+    { id: 'groups', label: 'Custom Groups', icon: '\u{1F4C1}' },
+  ];
+
+  const handleCreateGroup = () => {
+    if (!newGroupName.trim()) return;
+    const newGroup = { id: Date.now(), name: newGroupName.trim(), channels: [] };
+    const updated = [...groups, newGroup];
+    saveCustomGroups(updated);
+    setGroups(updated);
+    setNewGroupName('');
+    setShowCreateGroup(false);
+  };
+
+  const handleRenameGroup = (id) => {
+    if (!editGroupName.trim()) return;
+    const updated = groups.map(g => g.id === id ? { ...g, name: editGroupName.trim() } : g);
+    saveCustomGroups(updated);
+    setGroups(updated);
+    setEditGroupId(null);
+    setEditGroupName('');
+  };
+
+  const handleDeleteGroup = (id) => {
+    const updated = groups.filter(g => g.id !== id);
+    saveCustomGroups(updated);
+    setGroups(updated);
+    setConfirmDeleteGroup(null);
+  };
+
+  const handleRemoveFromGroup = (groupId, channelId) => {
+    const updated = groups.map(g => g.id === groupId ? { ...g, channels: g.channels.filter(c => c.id !== channelId) } : g);
+    saveCustomGroups(updated);
+    setGroups(updated);
+  };
+
+  const handleAddToGroup = (groupId, channel) => {
+    const updated = groups.map(g => {
+      if (g.id !== groupId) return g;
+      if (g.channels.find(c => c.id === channel.id)) return g;
+      return { ...g, channels: [...g.channels, channel] };
+    });
+    saveCustomGroups(updated);
+    setGroups(updated);
+  };
+
+  const [moveTarget, setMoveTarget] = useState(null); // { item, type }
+
+  const renderFavList = (items, type) => {
+    if (items.length === 0) return (
+      <div className="epg-empty">
+        <div style={{ fontSize: 48 }}>{type === 'live' ? '\u{1F4FA}' : type === 'vod' ? '\u{1F3AC}' : '\u{1F3A5}'}</div>
+        <p>No {type === 'live' ? 'channel' : type === 'vod' ? 'movie' : 'series'} favorites yet</p>
+        <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>Add favorites from the {type === 'live' ? 'Live TV' : type === 'vod' ? 'Movies' : 'Series'} section</p>
+      </div>
+    );
+    return (
+      <div className="history-list">
+        {items.map(item => {
+          const itemId = type === 'series' ? item.series_id : (item.stream_id || item.num);
+          const itemName = item.name || item.title || 'Unknown';
+          const icon = item.stream_icon || item.cover || '';
+          return (
+            <div key={itemId} className="history-item">
+              {icon ? <img className="history-icon" src={icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="history-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{type === 'live' ? '\u{1F4FA}' : '\u{1F3AC}'}</div>}
+              <div className="history-info" onClick={() => {
+                if (type === 'live' && api) { setPlayingItem({ url: api.getLiveUrl(itemId, 'ts'), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'live', streamId: itemId }); }
+                else if (type === 'vod' && api) { setPlayingItem({ url: api.getVodUrl(itemId, 'mp4'), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'vod', streamId: itemId }); }
+              }} style={{ cursor: 'pointer', flex: 1 }}>
+                <div className="history-name">{itemName}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {groups.length > 0 && (
+                  moveTarget && moveTarget.id === itemId ? (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {groups.map(g => (
+                        <button key={g.id} className="settings-btn settings-btn-secondary" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => { handleAddToGroup(g.id, { id: itemId, name: itemName, icon, type }); setMoveTarget(null); }}>{g.name}</button>
+                      ))}
+                      <button className="settings-btn settings-btn-secondary" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => setMoveTarget(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button className="settings-btn settings-btn-secondary" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setMoveTarget({ id: itemId, name: itemName, icon, type })} title="Add to group">{'\u{1F4C1}'}</button>
+                  )
+                )}
+                <button className="settings-btn settings-btn-danger" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { toggleFavorite(type, itemId); setLoadedFavs(false); }} title="Remove">&times;</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="section-screen">
@@ -1550,16 +1887,21 @@ function FavoritesScreen({ onBack, api }) {
           <div className="sidebar-categories" style={{ paddingTop: 12 }}>
             {tabs.map(tab => (
               <div key={tab.id} className={`sidebar-cat-item ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
-                <span dangerouslySetInnerHTML={{ __html: tab.icon + ' ' + tab.label }} />
-                <span className="sidebar-cat-count">{tab.id === 'live' ? liveFavs.length : tab.id === 'vod' ? vodFavs.length : tab.id === 'series' ? seriesFavs.length : history.length}</span>
+                <span>{tab.icon} {tab.label}</span>
+                <span className="sidebar-cat-count">
+                  {tab.id === 'live' ? liveFavs.length : tab.id === 'vod' ? vodFavs.length : tab.id === 'series' ? seriesFavs.length : tab.id === 'history' ? history.length : groups.length}
+                </span>
               </div>
             ))}
           </div>
         </div>
-        <div className="favorites-content">
-          {activeTab === 'history' ? (
+        <div className="favorites-content" style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+          {activeTab === 'live' && renderFavList(liveChannels, 'live')}
+          {activeTab === 'vod' && renderFavList(vodItems, 'vod')}
+          {activeTab === 'series' && renderFavList(seriesItems, 'series')}
+          {activeTab === 'history' && (
             history.length === 0 ? (
-              <div className="epg-empty"><div style={{ fontSize: 48 }}>&#128340;</div><p>No watch history yet</p></div>
+              <div className="epg-empty"><div style={{ fontSize: 48 }}>{'\u{1F554}'}</div><p>No watch history yet</p></div>
             ) : (
               <div className="history-list">
                 {history.map(item => (
@@ -1574,11 +1916,76 @@ function FavoritesScreen({ onBack, api }) {
                 ))}
               </div>
             )
-          ) : (
-            <div className="epg-empty">
-              <div style={{ fontSize: 48 }}>&#9733;</div>
-              <p>{activeTab === 'live' ? `${liveFavs.length} favorite channels` : activeTab === 'vod' ? `${vodFavs.length} favorite movies` : `${seriesFavs.length} favorite series`}</p>
-              <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>Add favorites from the {activeTab === 'live' ? 'Live TV' : activeTab === 'vod' ? 'Movies' : 'Series'} section</p>
+          )}
+          {activeTab === 'groups' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>Custom Groups</h3>
+                <button className="settings-btn settings-btn-primary" onClick={() => setShowCreateGroup(true)} style={{ fontSize: 12 }}>+ New Group</button>
+              </div>
+              {showCreateGroup && (
+                <div className="settings-card" style={{ marginBottom: 16, padding: 16 }}>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <input className="quick-connect-input" placeholder="Group name" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleCreateGroup()} />
+                    <button className="settings-btn settings-btn-primary" onClick={handleCreateGroup} style={{ fontSize: 12 }}>Create</button>
+                    <button className="settings-btn settings-btn-secondary" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); }} style={{ fontSize: 12 }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+              {groups.length === 0 && !showCreateGroup && (
+                <div className="epg-empty">
+                  <div style={{ fontSize: 48 }}>{'\u{1F4C1}'}</div>
+                  <p>No custom groups yet</p>
+                  <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>Create groups and add your favorite channels to organize them</p>
+                </div>
+              )}
+              {groups.map(group => (
+                <div key={group.id} className="settings-card" style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    {editGroupId === group.id ? (
+                      <div style={{ display: 'flex', gap: 8, flex: 1 }}>
+                        <input className="quick-connect-input" value={editGroupName} onChange={e => setEditGroupName(e.target.value)} style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && handleRenameGroup(group.id)} />
+                        <button className="settings-btn settings-btn-primary" onClick={() => handleRenameGroup(group.id)} style={{ fontSize: 11 }}>Save</button>
+                        <button className="settings-btn settings-btn-secondary" onClick={() => setEditGroupId(null)} style={{ fontSize: 11 }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="settings-card-title" style={{ margin: 0 }}>{'\u{1F4C1}'} {group.name} <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>({group.channels.length})</span></h3>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="settings-btn settings-btn-secondary" onClick={() => { setEditGroupId(group.id); setEditGroupName(group.name); }} style={{ fontSize: 11 }}>Rename</button>
+                          {confirmDeleteGroup === group.id ? (
+                            <>
+                              <button className="settings-btn settings-btn-danger" onClick={() => handleDeleteGroup(group.id)} style={{ fontSize: 11 }}>Confirm</button>
+                              <button className="settings-btn settings-btn-secondary" onClick={() => setConfirmDeleteGroup(null)} style={{ fontSize: 11 }}>Cancel</button>
+                            </>
+                          ) : (
+                            <button className="settings-btn settings-btn-danger" onClick={() => setConfirmDeleteGroup(group.id)} style={{ fontSize: 11 }}>Delete</button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {group.channels.length === 0 ? (
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No channels in this group. Add from the Live TV, Movies, or Series tabs.</p>
+                  ) : (
+                    <div className="history-list" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                      {group.channels.map(ch => (
+                        <div key={ch.id} className="history-item">
+                          {ch.icon ? <img className="history-icon" src={ch.icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="history-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{ch.type === 'live' ? '\u{1F4FA}' : '\u{1F3AC}'}</div>}
+                          <div className="history-info" onClick={() => {
+                            if (ch.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(ch.id, 'ts'), name: ch.name });
+                            else if (ch.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(ch.id, 'mp4'), name: ch.name });
+                          }} style={{ cursor: 'pointer', flex: 1 }}>
+                            <div className="history-name">{ch.name}</div>
+                            <div className="history-meta" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ch.type === 'live' ? 'Live TV' : ch.type === 'vod' ? 'Movie' : 'Series'}</div>
+                          </div>
+                          <button className="settings-btn settings-btn-danger" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => handleRemoveFromGroup(group.id, ch.id)}>&times;</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -2145,8 +2552,23 @@ export default function App() {
 
   const isTrialExpired = playerLicense.type === 'trial' && playerLicense.trialDaysLeft <= 0;
 
+  const handleActivated = (creds) => {
+    // Save as first playlist if none exist
+    const existing = getPlaylists();
+    if (existing.length === 0 && creds.url && creds.url !== 'http://demo') {
+      savePlaylists([{ id: Date.now(), name: 'My Playlist', server_url: creds.url, username: creds.username, password: creds.password, is_default: true }]);
+    }
+    setCredentials(creds);
+    setScreen('home');
+  };
+
+  const handleSwitchPlaylist = (creds) => {
+    setCredentials(creds);
+    setScreen('home');
+  };
+
   if (!credentials) {
-    return <ActivationScreen onActivated={(creds) => { setCredentials(creds); setScreen('home'); }} />;
+    return <ActivationScreen onActivated={handleActivated} />;
   }
 
   if (isTrialExpired) {
@@ -2176,6 +2598,8 @@ export default function App() {
       return <EPGGridScreen onBack={() => setScreen('home')} api={api} />;
     case 'multiscreen':
       return <MultiScreenScreen onBack={() => setScreen('home')} api={api} />;
+    case 'playlists':
+      return <PlaylistsScreen onBack={() => setScreen('home')} onSwitch={handleSwitchPlaylist} activePlaylist={credentials} />;
     default:
       return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} contentStats={contentStats} />;
   }
