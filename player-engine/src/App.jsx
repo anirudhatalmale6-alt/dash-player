@@ -1241,27 +1241,44 @@ function VideoPlayer({ url, onClose, title, inline }) {
     onClose?.();
   };
 
+  // When mpv is embedded, it renders directly into the Electron window.
+  // Show a transparent overlay with controls on top.
+  if (usingMpv) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', pointerEvents: 'none' }}>
+        {/* Top bar with title and close button */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px',
+          background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)', pointerEvents: 'auto' }}>
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 500, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{title || 'Playing'}</span>
+          <button onClick={handleClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
+            width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&#10005;</button>
+        </div>
+        {/* Spacer - transparent area where mpv video shows through */}
+        <div style={{ flex: 1 }} />
+        {/* Bottom controls: audio/subtitle track selection */}
+        {(audioTracks.length > 1 || subtitleTracks.length > 0) && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 16px',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)', pointerEvents: 'auto' }}>
+            <TrackMenus />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="video-player-overlay" onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
       <div className="video-player-container">
         <div className="video-player-header">
           <span className="video-title">{title || 'Playing'}</span>
           <div className="video-header-actions">
-            {!usingMpv && <button className="video-fullscreen-btn" onClick={handleFullscreen} title="Fullscreen">&#x26F6;</button>}
+            <button className="video-fullscreen-btn" onClick={handleFullscreen} title="Fullscreen">&#x26F6;</button>
             <button className="video-close-btn" onClick={handleClose}>&#10005;</button>
           </div>
         </div>
         {loading && !error && <div className="video-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="video-error">{error}</div>}
-        {usingMpv ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200, color: '#a78bfa', gap: 12 }}>
-            <div style={{ fontSize: 48 }}>&#9654;</div>
-            <div style={{ fontSize: 16 }}>Playing in native player</div>
-            <div style={{ fontSize: 12, color: '#888' }}>Use the player window for video controls</div>
-          </div>
-        ) : (
-          <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" crossOrigin="anonymous" disablePictureInPicture />
-        )}
+        <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" crossOrigin="anonymous" disablePictureInPicture />
         {!loading && !error && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
             <TrackMenus />

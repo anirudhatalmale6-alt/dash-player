@@ -236,13 +236,28 @@ ipcMain.handle('mpv-play', async (event, { url, isLive }) => {
     try { fs.unlinkSync(mpvIpcPath); } catch(e) {}
   }
 
+  // Get the native window handle to embed mpv inside Electron
+  let wid = null;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      const handle = mainWindow.getNativeWindowHandle();
+      if (process.platform === 'win32') {
+        // Windows HWND - read as pointer (works for both 32-bit and 64-bit)
+        wid = handle.length >= 8 ? Number(handle.readBigUInt64LE(0)) : handle.readUInt32LE(0);
+      } else {
+        wid = handle.readUInt32LE(0); // X11 window ID
+      }
+      console.log('[MPV] Embedding in window handle:', wid);
+    } catch (e) {
+      console.log('[MPV] Could not get window handle:', e.message);
+    }
+  }
+
   const args = [
     '--no-terminal',
-    '--force-window=yes',
     '--keep-open=yes',
-    '--no-border',
-    '--ontop',
-    '--title=DashPlayer Video',
+    '--no-osc',
+    '--no-input-default-bindings',
     '--input-ipc-server=' + mpvIpcPath,
     '--osd-level=0',
     '--hwdec=auto',
@@ -250,6 +265,14 @@ ipcMain.handle('mpv-play', async (event, { url, isLive }) => {
     '--cache=yes',
     '--demuxer-max-bytes=50M',
   ];
+
+  // Embed mpv inside the Electron window
+  if (wid) {
+    args.push('--wid=' + wid);
+  } else {
+    // Fallback: separate window
+    args.push('--force-window=yes', '--no-border', '--ontop', '--title=DashPlayer Video');
+  }
 
   if (isLive) {
     args.push('--cache-secs=5', '--demuxer-readahead-secs=3');
