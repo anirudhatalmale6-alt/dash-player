@@ -453,7 +453,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       }, 10000);
     }
 
-    return () => { cleanup(); if (video) video.src = ''; };
+    return () => { cleanup(); if (video) { video.src = ''; video.load(); } };
   }, [url]);
 
   const handleFullscreen = () => {
@@ -612,6 +612,10 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
             <span className="home-card-sm-icon">&#128220;</span>
             <span>Playlists</span>
           </div>
+          <div className="home-card-sm" onClick={() => onNavigate('speedtest')}>
+            <span className="home-card-sm-icon">&#128246;</span>
+            <span>Speed Test</span>
+          </div>
           <div className="home-card-sm" onClick={() => onNavigate('settings')}>
             <span className="home-card-sm-icon">&#9881;</span>
             <span>Settings</span>
@@ -667,6 +671,7 @@ function LiveTVScreen({ onBack, api }) {
   const [favs, setFavs] = useState(() => getFavorites('live'));
   const [showFavsOnly, setShowFavsOnly] = useState(false);
   const [sortBy, setSortBy] = useState('default');
+  const [showEpgOverlay, setShowEpgOverlay] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -840,9 +845,9 @@ function LiveTVScreen({ onBack, api }) {
                 </div>
               </div>
               <div className="live-player-video">
-                {api && <VideoPlayer url={api.getLiveUrl(playingChannel.stream_id, 'ts')} title={playingChannel.name} onClose={() => setPlayingChannel(null)} inline={true} />}
+                {api && <VideoPlayer key={playingChannel.stream_id} url={api.getLiveUrl(playingChannel.stream_id, 'ts')} title={playingChannel.name} onClose={() => setPlayingChannel(null)} inline={true} />}
               </div>
-              <div className="live-player-epg-bar">
+              <div className="live-player-epg-bar" onClick={() => epgData.length > 0 && setShowEpgOverlay(v => !v)}>
                 {epgData.length > 0 ? epgData.filter(p => isCurrentProgram(p) || !isPastProgram(p)).slice(0, 4).map((prog, idx) => (
                   <div key={prog.id} className={`live-epg-item ${isCurrentProgram(prog) ? 'current' : ''}`}>
                     <span className="live-epg-time">{formatTime(prog.start)}</span>
@@ -853,6 +858,26 @@ function LiveTVScreen({ onBack, api }) {
                   </div>
                 )) : <div className="live-epg-item"><span className="live-epg-title" style={{ opacity: 0.5 }}>No EPG data available</span></div>}
               </div>
+              {showEpgOverlay && epgData.length > 0 && (
+                <div className="live-epg-overlay">
+                  <div className="live-epg-overlay-close">
+                    <h3>Program Guide</h3>
+                    <button onClick={(e) => { e.stopPropagation(); setShowEpgOverlay(false); }}>&times;</button>
+                  </div>
+                  {epgData.map((prog, idx) => (
+                    <div key={prog.id} className={`epg-prog ${idx % 2 === 1 ? 'epg-purple' : ''} ${isCurrentProgram(prog) ? 'current' : ''} ${isPastProgram(prog) ? 'past' : ''}`}>
+                      <div className="epg-prog-time">{formatTime(prog.start)}</div>
+                      <div className="epg-prog-details">
+                        <div className="epg-prog-title">{prog.title}</div>
+                        <div className="epg-prog-desc">{prog.description}</div>
+                        {isCurrentProgram(prog) && (
+                          <div className="epg-prog-progress"><div className="epg-prog-bar" style={{ width: `${getProgress(prog)}%` }} /></div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="live-player-channels">
               {filtered.slice(0, 50).map(ch => (
@@ -1527,6 +1552,8 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
   const [m3uInput, setM3uInput] = useState('');
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [pinPrompt, setPinPrompt] = useState(null); // { playlistId, pin, error }
+  const [pinSetup, setPinSetup] = useState(null); // { playlistId, pin }
 
   const parseM3uUrl = (url) => {
     try {
@@ -1606,7 +1633,47 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
   };
 
   const handleSwitchTo = (pl) => {
-    if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+    if (pl.pin) {
+      setPinPrompt({ playlistId: pl.id, pin: '', error: '' });
+    } else {
+      if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+    }
+  };
+
+  const handlePinSubmit = () => {
+    if (!pinPrompt) return;
+    const pl = playlists.find(p => p.id === pinPrompt.playlistId);
+    if (!pl) return;
+    if (pinPrompt.pin === pl.pin) {
+      setPinPrompt(null);
+      if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+    } else {
+      setPinPrompt({ ...pinPrompt, error: 'Incorrect PIN. Please try again.' });
+    }
+  };
+
+  const handleSetPin = (playlistId) => {
+    setPinSetup({ playlistId, pin: '' });
+  };
+
+  const handleSavePin = () => {
+    if (!pinSetup || pinSetup.pin.length !== 4) {
+      return;
+    }
+    const updated = playlists.map(p => p.id === pinSetup.playlistId ? { ...p, pin: pinSetup.pin } : p);
+    savePlaylists(updated);
+    setPlaylists(updated);
+    setPinSetup(null);
+    setMsg('PIN set successfully');
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const handleRemovePin = (playlistId) => {
+    const updated = playlists.map(p => p.id === playlistId ? { ...p, pin: '' } : p);
+    savePlaylists(updated);
+    setPlaylists(updated);
+    setMsg('PIN removed');
+    setTimeout(() => setMsg(''), 3000);
   };
 
   return (
@@ -1666,6 +1733,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
           {playlists.map(pl => {
             const isActive = activePlaylist && activePlaylist.url === pl.server_url && activePlaylist.username === pl.username;
+            const isProtected = !!pl.pin;
             return (
               <div key={pl.id} className="settings-card" style={{ position: 'relative', border: pl.is_default ? '2px solid #8b5cf6' : undefined }}>
                 {pl.is_default && (
@@ -1674,10 +1742,13 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
                 {isActive && !pl.is_default && (
                   <span style={{ position: 'absolute', top: 10, right: 12, background: '#10b981', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>ACTIVE</span>
                 )}
-                <h3 className="settings-card-title" style={{ marginBottom: 8 }}>{pl.name || 'My Playlist'}</h3>
+                {isProtected && (
+                  <span style={{ position: 'absolute', top: pl.is_default || (isActive && !pl.is_default) ? 34 : 10, right: 12, background: '#f59e0b', color: '#fff', fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>&#128274; Protected</span>
+                )}
+                <h3 className="settings-card-title" style={{ marginBottom: 8 }}>{isProtected ? '🔒 ' : ''}{pl.name || 'My Playlist'}</h3>
                 <div className="settings-device-info" style={{ marginBottom: 12 }}>
                   <div className="settings-device-row"><span className="settings-device-label">Server</span><span className="settings-device-value" style={{ wordBreak: 'break-all' }}>{pl.server_url}</span></div>
-                  <div className="settings-device-row"><span className="settings-device-label">Username</span><span className="settings-device-value">{pl.username}</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">Username</span><span className="settings-device-value">{isProtected ? '*****' : pl.username}</span></div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {!isActive && (
@@ -1687,6 +1758,11 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
                     <button className="settings-btn settings-btn-secondary" onClick={() => handleSetDefault(pl.id)} style={{ fontSize: 12 }}>Set Default</button>
                   )}
                   <button className="settings-btn settings-btn-secondary" onClick={() => handleEdit(pl)} style={{ fontSize: 12 }}>Edit</button>
+                  {isProtected ? (
+                    <button className="settings-btn settings-btn-secondary" onClick={() => handleRemovePin(pl.id)} style={{ fontSize: 12 }}>Remove PIN</button>
+                  ) : (
+                    <button className="settings-btn settings-btn-secondary" onClick={() => handleSetPin(pl.id)} style={{ fontSize: 12 }}>Set PIN</button>
+                  )}
                   {confirmDelete === pl.id ? (
                     <>
                       <button className="settings-btn settings-btn-danger" onClick={() => handleDelete(pl.id)} style={{ fontSize: 12 }}>Confirm</button>
@@ -1700,6 +1776,189 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
             );
           })}
         </div>
+      </div>
+
+      {/* PIN Setup Dialog */}
+      {pinSetup && (
+        <div className="pin-overlay" onClick={() => setPinSetup(null)}>
+          <div className="pin-dialog" onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>&#128274;</div>
+            <h3 style={{ marginBottom: 8, color: 'var(--text)' }}>Set PIN</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-sub)', marginBottom: 20 }}>Enter a 4-digit PIN to protect this playlist</p>
+            <input
+              className="pin-input"
+              type="tel"
+              maxLength={4}
+              placeholder="0000"
+              value={pinSetup.pin}
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setPinSetup({ ...pinSetup, pin: val });
+              }}
+              onKeyDown={e => { if (e.key === 'Enter' && pinSetup.pin.length === 4) handleSavePin(); }}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20 }}>
+              <button className="settings-btn settings-btn-primary" onClick={handleSavePin} disabled={pinSetup.pin.length !== 4}>Save PIN</button>
+              <button className="settings-btn settings-btn-secondary" onClick={() => setPinSetup(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PIN Prompt Dialog */}
+      {pinPrompt && (
+        <div className="pin-overlay" onClick={() => setPinPrompt(null)}>
+          <div className="pin-dialog" onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>&#128274;</div>
+            <h3 style={{ marginBottom: 8, color: 'var(--text)' }}>Enter PIN</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-sub)', marginBottom: 20 }}>This playlist is PIN protected</p>
+            <input
+              className="pin-input"
+              type="tel"
+              maxLength={4}
+              placeholder="0000"
+              value={pinPrompt.pin}
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setPinPrompt({ ...pinPrompt, pin: val, error: '' });
+              }}
+              onKeyDown={e => { if (e.key === 'Enter' && pinPrompt.pin.length === 4) handlePinSubmit(); }}
+              autoFocus
+            />
+            {pinPrompt.error && <div className="pin-error">{pinPrompt.error}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20 }}>
+              <button className="settings-btn settings-btn-primary" onClick={handlePinSubmit} disabled={pinPrompt.pin.length !== 4}>Unlock</button>
+              <button className="settings-btn settings-btn-secondary" onClick={() => setPinPrompt(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════ SPEED TEST SCREEN ══════ */
+function SpeedTestScreen({ onBack }) {
+  const [testing, setTesting] = useState(false);
+  const [results, setResults] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState('');
+
+  const runSpeedTest = async () => {
+    setTesting(true); setResults(null); setProgress(0); setError('');
+    try {
+      // Ping test
+      const pingStart = performance.now();
+      await fetch('https://speed.cloudflare.com/__down?bytes=1000', { cache: 'no-store' });
+      const ping = Math.round(performance.now() - pingStart);
+      setProgress(20);
+
+      // Download test (10MB)
+      const dlStart = performance.now();
+      const response = await fetch('https://speed.cloudflare.com/__down?bytes=10000000', { cache: 'no-store' });
+      const reader = response.body.getReader();
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.length;
+        setProgress(20 + Math.round((received / 10000000) * 70));
+      }
+      const dlTime = (performance.now() - dlStart) / 1000;
+      const dlSpeed = ((received * 8) / dlTime / 1000000).toFixed(2);
+      setProgress(100);
+
+      setResults({ ping, download: dlSpeed, bytes: received });
+    } catch (e) {
+      setError('Speed test failed: ' + e.message);
+    }
+    setTesting(false);
+  };
+
+  const formatBytes = (bytes) => {
+    if (bytes >= 1000000) return (bytes / 1000000).toFixed(1) + ' MB';
+    if (bytes >= 1000) return (bytes / 1000).toFixed(1) + ' KB';
+    return bytes + ' B';
+  };
+
+  return (
+    <div className="section-screen">
+      <div className="section-header">
+        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <h1 className="section-title">Speed Test</h1>
+      </div>
+      <div style={{ padding: '40px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32, overflowY: 'auto', flex: 1 }}>
+        {/* Gauge area */}
+        <div className="speedtest-gauge">
+          <svg viewBox="0 0 200 120" width="280" height="168">
+            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(139,92,246,0.15)" strokeWidth="12" strokeLinecap="round" />
+            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGrad)" strokeWidth="12" strokeLinecap="round"
+              strokeDasharray={`${(progress / 100) * 251.3} 251.3`} style={{ transition: 'stroke-dasharray 0.3s ease' }} />
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#8b5cf6" />
+                <stop offset="100%" stopColor="#06b6d4" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="speedtest-gauge-value">
+            {testing ? `${progress}%` : results ? `${results.download}` : '0'}
+          </div>
+          <div className="speedtest-gauge-unit">
+            {testing ? 'Testing...' : results ? 'Mbps' : 'Mbps'}
+          </div>
+        </div>
+
+        {/* Start button */}
+        {!testing && !results && (
+          <button className="settings-btn settings-btn-primary speedtest-start-btn" onClick={runSpeedTest}>
+            &#128640; Start Test
+          </button>
+        )}
+
+        {/* Progress animation */}
+        {testing && (
+          <div className="speedtest-progress-bar">
+            <div className="speedtest-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+
+        {/* Error */}
+        {error && <div className="settings-msg" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>{error}</div>}
+
+        {/* Results */}
+        {results && (
+          <div className="speedtest-results">
+            <div className="speedtest-result-card">
+              <div className="speedtest-result-icon">&#128640;</div>
+              <div className="speedtest-result-value">{results.download}</div>
+              <div className="speedtest-result-label">Download (Mbps)</div>
+            </div>
+            <div className="speedtest-result-card">
+              <div className="speedtest-result-icon">&#9201;</div>
+              <div className="speedtest-result-value">{results.ping}</div>
+              <div className="speedtest-result-label">Ping (ms)</div>
+            </div>
+            <div className="speedtest-result-card">
+              <div className="speedtest-result-icon">&#128230;</div>
+              <div className="speedtest-result-value">{formatBytes(results.bytes)}</div>
+              <div className="speedtest-result-label">Data Downloaded</div>
+            </div>
+            <div className="speedtest-result-card">
+              <div className="speedtest-result-icon">&#9989;</div>
+              <div className="speedtest-result-value" style={{ color: '#10b981' }}>Connected</div>
+              <div className="speedtest-result-label">Status</div>
+            </div>
+          </div>
+        )}
+
+        {/* Retest */}
+        {results && (
+          <button className="settings-btn settings-btn-secondary" onClick={runSpeedTest}>
+            &#128260; Test Again
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2598,6 +2857,8 @@ export default function App() {
       return <EPGGridScreen onBack={() => setScreen('home')} api={api} />;
     case 'multiscreen':
       return <MultiScreenScreen onBack={() => setScreen('home')} api={api} />;
+    case 'speedtest':
+      return <SpeedTestScreen onBack={() => setScreen('home')} />;
     case 'playlists':
       return <PlaylistsScreen onBack={() => setScreen('home')} onSwitch={handleSwitchPlaylist} activePlaylist={credentials} />;
     default:

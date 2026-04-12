@@ -27,6 +27,7 @@
         <li><a href="#home" class="nav-link active" data-section="home"><i class="fas fa-home"></i> Home</a></li>
         <li><a href="#playlist" class="nav-link" data-section="playlist"><i class="fas fa-list"></i> Manage Playlist</a></li>
         <li><a href="#activate" class="nav-link" data-section="activate"><i class="fas fa-key"></i> Activate</a></li>
+        <li><a href="#mac-change" class="nav-link" data-section="mac-change"><i class="fas fa-exchange-alt"></i> MAC Change</a></li>
       </ul>
     </div>
   </nav>
@@ -369,6 +370,56 @@
     </div>
   </section>
 
+  <!-- ============ MAC CHANGE SECTION ============ -->
+  <section id="mac-change" class="page">
+    <div class="section page-section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-badge">MAC Change</span>
+          <h2 class="section-title">Request MAC Address Change</h2>
+          <p class="section-subtitle">If you need to transfer your license to a new device, submit a MAC change request below.</p>
+        </div>
+
+        <div class="card card-form">
+          <h3><i class="fas fa-exchange-alt"></i> MAC Change Request</h3>
+          <form id="macChangeForm">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="macChangeOldMac">Current MAC Address</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-fingerprint"></i></span>
+                  <input type="text" id="macChangeOldMac" placeholder="Current MAC Address" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="macChangeDeviceKey">Device Key</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-key"></i></span>
+                  <input type="text" id="macChangeDeviceKey" placeholder="Device Key" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="macChangeNewMac">New MAC Address</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-desktop"></i></span>
+                  <input type="text" id="macChangeNewMac" placeholder="New MAC Address" required>
+                </div>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Request MAC Change</button>
+          </form>
+          <div id="macChangeError" class="alert alert-error" style="display:none;"></div>
+          <div id="macChangeSuccess" class="alert alert-success" style="display:none;"></div>
+          <div id="macChangeLoading" class="loading" style="display:none;">
+            <div class="spinner"></div>
+            <span>Submitting request...</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="footer">
     <div class="container">
@@ -386,6 +437,7 @@
             <li><a href="#home">Home</a></li>
             <li><a href="#playlist">Manage Playlist</a></li>
             <li><a href="#activate">Activate</a></li>
+            <li><a href="#mac-change">MAC Change</a></li>
             <li><a href="https://dashplayer.eu/download/DashPlayerSetup.exe">Download</a></li>
           </ul>
         </div>

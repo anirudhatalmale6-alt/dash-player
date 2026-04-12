@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initNavbar();
   initPlaylistPage();
   initActivatePage();
+  initMacChangePage();
 });
 
 // ============ Router ============
@@ -27,7 +28,7 @@ function initRouter() {
 
 function handleRoute() {
   const hash = (window.location.hash || '#home').replace('#', '');
-  const validSections = ['home', 'playlist', 'activate'];
+  const validSections = ['home', 'playlist', 'activate', 'mac-change'];
   const section = validSections.includes(hash) ? hash : 'home';
 
   // Hide all pages
@@ -102,14 +103,15 @@ async function lookupPlaylistDevice(mac) {
   hideEl('currentPlaylists');
 
   try {
-    const data = await apiGet(`/devices/${encodeURIComponent(mac)}`);
+    const data = await apiPost('/device/lookup', { mac_address: mac });
 
     // Show device info
-    renderDeviceInfo('playlistDeviceDetails', 'playlistDeviceStatus', data);
+    renderDeviceInfo('playlistDeviceDetails', 'playlistDeviceStatus', data.device);
     showEl('playlistDeviceInfo');
 
-    // Load playlists
-    await loadPlaylists(mac);
+    // Store playlists from lookup response
+    devicePlaylists = Array.isArray(data.playlists) ? data.playlists : [];
+    renderPlaylists();
 
     // Show add playlist form
     showEl('addPlaylistSection');
@@ -121,10 +123,10 @@ async function lookupPlaylistDevice(mac) {
   }
 }
 
-async function loadPlaylists(mac) {
+async function reloadPlaylists() {
   try {
-    const data = await apiGet(`/devices/${encodeURIComponent(mac)}/playlists`);
-    devicePlaylists = Array.isArray(data) ? data : (data.playlists || []);
+    const data = await apiPost('/device/lookup', { mac_address: currentPlaylistMac });
+    devicePlaylists = Array.isArray(data.playlists) ? data.playlists : [];
     renderPlaylists();
   } catch (err) {
     devicePlaylists = [];
@@ -172,7 +174,8 @@ async function addPlaylist() {
   hideEl('addPlaylistSuccess');
 
   try {
-    await apiPost(`/devices/${encodeURIComponent(currentPlaylistMac)}/playlists`, {
+    await apiPost('/device/playlists', {
+      mac_address: currentPlaylistMac,
       server_url: serverUrl,
       username: username,
       password: password
@@ -186,7 +189,7 @@ async function addPlaylist() {
     document.getElementById('playlistPassword').value = '';
 
     // Reload playlists
-    await loadPlaylists(currentPlaylistMac);
+    await reloadPlaylists();
   } catch (err) {
     showError('addPlaylistError', err.message || 'Failed to add playlist. Please try again.');
   } finally {
@@ -198,8 +201,8 @@ async function deletePlaylist(playlistId) {
   if (!confirm('Are you sure you want to delete this playlist?')) return;
 
   try {
-    await apiDelete(`/devices/${encodeURIComponent(currentPlaylistMac)}/playlists/${playlistId}`);
-    await loadPlaylists(currentPlaylistMac);
+    await apiDelete(`/device/playlists/${playlistId}`, { mac_address: currentPlaylistMac });
+    await reloadPlaylists();
   } catch (err) {
     alert('Failed to delete playlist: ' + (err.message || 'Unknown error'));
   }
@@ -207,8 +210,8 @@ async function deletePlaylist(playlistId) {
 
 async function setDefaultPlaylist(playlistId) {
   try {
-    await apiPut(`/devices/${encodeURIComponent(currentPlaylistMac)}/playlists/${playlistId}/default`);
-    await loadPlaylists(currentPlaylistMac);
+    await apiPost(`/device/playlists/${playlistId}/default`, { mac_address: currentPlaylistMac });
+    await reloadPlaylists();
   } catch (err) {
     alert('Failed to set default: ' + (err.message || 'Unknown error'));
   }
@@ -234,14 +237,16 @@ async function lookupActivateDevice(mac) {
   hideEl('packagesSection');
 
   try {
-    const data = await apiGet(`/devices/${encodeURIComponent(mac)}`);
+    const data = await apiPost('/device/lookup', { mac_address: mac });
 
-    renderDeviceInfo('activateDeviceDetails', 'activateDeviceStatus', data);
+    renderDeviceInfo('activateDeviceDetails', 'activateDeviceStatus', data.device);
     showEl('activateDeviceInfo');
 
     // Show packages if expired or trial
-    const status = (data.status || '').toLowerCase();
-    if (status === 'expired' || status === 'trial' || status === 'inactive') {
+    const devStatus = (data.device.status || data.device.license_type || '').toLowerCase();
+    const devExpiry = data.device.license_expires_at || data.device.expiry_date || data.device.expires_at;
+    const isExpired = devExpiry && new Date(devExpiry) < new Date();
+    if (isExpired || devStatus === 'expired' || devStatus === 'trial' || devStatus === 'inactive') {
       showEl('packagesSection');
     } else {
       // Still show packages so active users can renew early
@@ -284,6 +289,47 @@ async function handleRenew(packageType) {
 // Make handleRenew available globally for onclick
 window.handleRenew = handleRenew;
 
+// ============ MAC Change Page ============
+
+function initMacChangePage() {
+  const form = document.getElementById('macChangeForm');
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await handleMacChange();
+  });
+}
+
+async function handleMacChange() {
+  const oldMac = document.getElementById('macChangeOldMac').value.trim();
+  const deviceKey = document.getElementById('macChangeDeviceKey').value.trim();
+  const newMac = document.getElementById('macChangeNewMac').value.trim();
+
+  if (!oldMac || !deviceKey || !newMac) return;
+
+  showEl('macChangeLoading');
+  hideEl('macChangeError');
+  hideEl('macChangeSuccess');
+
+  try {
+    await apiPost('/device/mac-change', {
+      old_mac: oldMac,
+      device_key: deviceKey,
+      new_mac: newMac
+    });
+
+    showSuccess('macChangeSuccess', 'MAC change request submitted successfully! Your device will be updated shortly.');
+
+    // Clear form
+    document.getElementById('macChangeOldMac').value = '';
+    document.getElementById('macChangeDeviceKey').value = '';
+    document.getElementById('macChangeNewMac').value = '';
+  } catch (err) {
+    showError('macChangeError', err.message || 'Failed to submit MAC change request. Please check your details and try again.');
+  } finally {
+    hideEl('macChangeLoading');
+  }
+}
+
 // ============ Device Info Renderer ============
 
 function renderDeviceInfo(detailsId, statusId, data) {
@@ -292,20 +338,25 @@ function renderDeviceInfo(detailsId, statusId, data) {
 
   if (!statusEl || !detailsEl) return;
 
-  const status = (data.status || 'unknown').toLowerCase();
+  // Derive status from license_type and expiry
+  let status = (data.status || data.license_type || 'unknown').toLowerCase();
+  const expiresAt = data.license_expires_at || data.expiry_date || data.expires_at;
+  if (expiresAt && new Date(expiresAt) < new Date()) {
+    status = 'expired';
+  }
   statusEl.textContent = status.charAt(0).toUpperCase() + status.slice(1);
   statusEl.className = 'device-status';
 
-  if (status === 'active') statusEl.classList.add('status-active');
+  if (status === 'active' || status === 'lifetime') statusEl.classList.add('status-active');
   else if (status === 'expired' || status === 'inactive') statusEl.classList.add('status-expired');
   else if (status === 'trial') statusEl.classList.add('status-trial');
   else statusEl.classList.add('status-trial');
 
   const fields = [
-    { label: 'MAC Address', value: data.mac || data.mac_address || 'N/A' },
+    { label: 'MAC Address', value: data.mac_address || data.mac || 'N/A' },
     { label: 'Device Key', value: data.device_key || data.key || 'N/A' },
-    { label: 'Expiry Date', value: formatDate(data.expiry_date || data.expires_at || data.expiry) },
-    { label: 'Package', value: data.package || data.plan || 'N/A' },
+    { label: 'License Type', value: data.license_type || data.package || data.plan || 'N/A' },
+    { label: 'Expiry Date', value: formatDate(data.license_expires_at || data.expiry_date || data.expires_at) },
     { label: 'Created', value: formatDate(data.created_at || data.created) },
     { label: 'Last Active', value: formatDate(data.last_active || data.last_seen) }
   ];
@@ -364,11 +415,14 @@ async function apiPut(path, body) {
   return res.json();
 }
 
-async function apiDelete(path) {
-  const res = await fetch(API_BASE + path, {
-    method: 'DELETE',
-    headers: { 'Accept': 'application/json' }
-  });
+async function apiDelete(path, body) {
+  const headers = { 'Accept': 'application/json' };
+  const opts = { method: 'DELETE', headers };
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(API_BASE + path, opts);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.message || data.error || `Request failed (${res.status})`);

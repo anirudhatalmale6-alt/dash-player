@@ -78,4 +78,77 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Reset device key
+router.post('/:id/reset-key', (req, res) => {
+  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const { manual_key } = req.body || {};
+  const crypto = require('crypto');
+  const newKey = manual_key || crypto.randomBytes(8).toString('hex').toUpperCase();
+
+  try {
+    db.prepare('UPDATE devices SET device_key = ?, updated_at = datetime("now") WHERE id = ?').run(newKey, req.params.id);
+    res.json({ success: true, device_key: newKey });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Hard reset device (remove playlists, reset PINs flag, reset mac_changes_used)
+router.post('/:id/hard-reset', (req, res) => {
+  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const hardReset = db.transaction(() => {
+    // Delete all playlists for this device
+    db.prepare('DELETE FROM playlists WHERE device_id = ?').run(req.params.id);
+    // Reset device playlist fields, mac_changes_used, and flag a PIN reset via updated_at
+    db.prepare(`UPDATE devices SET
+      playlist_url = '', playlist_username = '', playlist_password = '',
+      mac_changes_used = 0,
+      updated_at = datetime("now")
+      WHERE id = ?`).run(req.params.id);
+  });
+
+  hardReset();
+  res.json({ success: true, message: 'Device hard-reset complete. Playlists removed, MAC changes counter reset.' });
+});
+
+// Toggle ban status
+router.post('/:id/ban', (req, res) => {
+  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const newBanStatus = device.is_banned ? 0 : 1;
+  db.prepare('UPDATE devices SET is_banned = ?, updated_at = datetime("now") WHERE id = ?').run(newBanStatus, req.params.id);
+  res.json({ success: true, is_banned: newBanStatus });
+});
+
+// Admin change device MAC manually
+router.post('/:id/change-mac', (req, res) => {
+  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const { new_mac } = req.body;
+  if (!new_mac) return res.status(400).json({ error: 'new_mac is required' });
+
+  db.prepare('UPDATE devices SET mac_address = ?, updated_at = datetime("now") WHERE id = ?').run(new_mac, req.params.id);
+  res.json({ success: true, mac_address: new_mac });
+});
+
+// Set MAC change limit for a device
+router.put('/:id/mac-limit', (req, res) => {
+  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const { limit } = req.body;
+  if (limit === undefined || limit === null || typeof limit !== 'number') {
+    return res.status(400).json({ error: 'limit (number) is required' });
+  }
+
+  db.prepare('UPDATE devices SET mac_change_limit = ?, updated_at = datetime("now") WHERE id = ?').run(limit, req.params.id);
+  res.json({ success: true, mac_change_limit: limit });
+});
+
 module.exports = router;

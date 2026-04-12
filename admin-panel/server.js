@@ -17,6 +17,7 @@ app.use('/api', require('./routes/public'));
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/devices', authMiddleware, require('./routes/devices'));
+app.use('/api/mac-requests', authMiddleware, require('./routes/mac-requests'));
 app.use('/api/packages', authMiddleware, require('./routes/packages'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/settings', authMiddleware, require('./routes/settings'));

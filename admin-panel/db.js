@@ -79,12 +79,30 @@ db.exec(`
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS mac_change_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    old_mac TEXT NOT NULL,
+    new_mac TEXT NOT NULL,
+    device_key TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_devices_mac ON devices(mac_address);
   CREATE INDEX IF NOT EXISTS idx_devices_key ON devices(device_key);
   CREATE INDEX IF NOT EXISTS idx_payments_device ON payments(device_id);
   CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
   CREATE INDEX IF NOT EXISTS idx_playlists_device ON playlists(device_id);
+  CREATE INDEX IF NOT EXISTS idx_mac_requests_device ON mac_change_requests(device_id);
+  CREATE INDEX IF NOT EXISTS idx_mac_requests_status ON mac_change_requests(status);
 `);
+
+// Add new columns to devices table if they don't exist
+try { db.exec('ALTER TABLE devices ADD COLUMN mac_change_limit INTEGER DEFAULT 1'); } catch (e) { /* column exists */ }
+try { db.exec('ALTER TABLE devices ADD COLUMN mac_changes_used INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+try { db.exec('ALTER TABLE devices ADD COLUMN is_banned INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
 
 // Insert default settings if not exist
 const defaultSettings = [
@@ -97,6 +115,8 @@ const defaultSettings = [
   ['payment_enabled', 'false'],
   ['app_name', 'Dash Player'],
   ['support_url', 'https://panel.dashplayer.tv'],
+  ['vat_enabled', '0'],
+  ['vat_rate', '0'],
 ];
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

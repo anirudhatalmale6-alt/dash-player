@@ -141,6 +141,37 @@ router.post('/device/playlists/:id/default', (req, res) => {
   res.json({ message: 'Default playlist updated' });
 });
 
+// Submit MAC change request from player/website (public)
+router.post('/device/mac-change', (req, res) => {
+  const { old_mac, device_key, new_mac } = req.body;
+  if (!old_mac || !device_key || !new_mac) {
+    return res.status(400).json({ error: 'old_mac, device_key, and new_mac are required' });
+  }
+
+  const device = db.prepare('SELECT * FROM devices WHERE mac_address = ? AND device_key = ?').get(old_mac, device_key);
+  if (!device) return res.status(404).json({ error: 'Device not found or invalid key' });
+
+  if (device.is_banned) {
+    return res.status(403).json({ error: 'Device is banned. Contact support.' });
+  }
+
+  if (device.mac_changes_used >= device.mac_change_limit) {
+    return res.status(403).json({ error: 'MAC change limit reached. Contact support.' });
+  }
+
+  // Check for existing pending request
+  const existing = db.prepare("SELECT id FROM mac_change_requests WHERE device_id = ? AND status = 'pending'").get(device.id);
+  if (existing) {
+    return res.status(409).json({ error: 'A pending MAC change request already exists for this device' });
+  }
+
+  const result = db.prepare(
+    'INSERT INTO mac_change_requests (device_id, old_mac, new_mac, device_key) VALUES (?, ?, ?, ?)'
+  ).run(device.id, old_mac, new_mac, device_key);
+
+  res.json({ success: true, request_id: result.lastInsertRowid, message: 'MAC change request submitted. Awaiting admin approval.' });
+});
+
 // Get packages (public)
 router.get('/packages', (req, res) => {
   const packages = db.prepare('SELECT * FROM packages WHERE is_active = 1 ORDER BY price ASC').all();
