@@ -227,7 +227,7 @@ function DashboardPage() {
                     <td className="mono">{d.mac_address}</td>
                     <td>{d.name || '-'}</td>
                     <td><span className={`badge badge-${d.status === 'active' ? 'success' : d.status === 'trial' ? 'warning' : 'default'}`}>{d.status}</span></td>
-                    <td>{d.license_expires ? new Date(d.license_expires).toLocaleDateString() : '-'}</td>
+                    <td>{d.license_expires_at ? new Date(d.license_expires_at).toLocaleDateString() : '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -334,11 +334,11 @@ function DevicesPage() {
               ) : devices.map(d => (
                 <tr key={d.id}>
                   <td className="mono">{d.mac_address}</td>
-                  <td className="mono">{d.device_key ? d.device_key.substring(0, 8) + '...' : '-'}</td>
+                  <td className="mono" style={{fontSize:'0.8em'}}>{d.device_key || '-'}</td>
                   <td>{d.name || '-'}</td>
                   <td><span className={`badge badge-${d.status === 'active' ? 'success' : d.status === 'trial' ? 'warning' : d.status === 'expired' ? 'danger' : 'default'}`}>{d.status}</span></td>
                   <td>{d.license_type || '-'}</td>
-                  <td>{d.license_expires ? new Date(d.license_expires).toLocaleDateString() : '-'}</td>
+                  <td>{d.license_expires_at ? new Date(d.license_expires_at).toLocaleDateString() : '-'}</td>
                   <td className="mono" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.playlist_url || '-'}</td>
                   <td>
                     <div className="action-btns">
@@ -385,12 +385,15 @@ function DeviceFormModal({ device, onSave, onClose }) {
     name: device?.name || '',
     status: device?.status || 'trial',
     license_type: device?.license_type || 'yearly',
-    license_expires: device?.license_expires ? device.license_expires.substring(0, 10) : '',
+    license_expires_at: device?.license_expires_at ? device.license_expires_at.substring(0, 10) : '',
     playlist_url: device?.playlist_url || '',
     playlist_username: device?.playlist_username || '',
     playlist_password: device?.playlist_password || '',
   });
   const [saving, setSaving] = useState(false);
+  const [changeMac, setChangeMac] = useState(false);
+  const [newMac, setNewMac] = useState('');
+  const [macMsg, setMacMsg] = useState('');
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -400,13 +403,39 @@ function DeviceFormModal({ device, onSave, onClose }) {
     onSave(form).finally(() => setSaving(false));
   };
 
+  const handleChangeMac = async () => {
+    if (!newMac) return;
+    try {
+      await api.post(`/devices/${device.id}/change-mac`, { new_mac: newMac });
+      setMacMsg('MAC changed successfully');
+      set('mac_address', newMac);
+      setChangeMac(false);
+      setNewMac('');
+    } catch (err) {
+      setMacMsg(err.response?.data?.error || 'Failed to change MAC');
+    }
+  };
+
+  const handleResetKey = async () => {
+    try {
+      const r = await api.post(`/devices/${device.id}/reset-key`);
+      setMacMsg('Device key reset to: ' + r.data.device_key);
+    } catch (err) {
+      setMacMsg(err.response?.data?.error || 'Failed to reset key');
+    }
+  };
+
   return (
     <Modal title={device ? 'Edit Device' : 'Add Device'} onClose={onClose}>
       <form onSubmit={handleSubmit}>
         <div className="form-grid">
           <div className="form-group">
             <label>MAC Address</label>
-            <input value={form.mac_address} onChange={e => set('mac_address', e.target.value)} placeholder="AA:BB:CC:DD:EE:FF" required />
+            <input value={form.mac_address} onChange={e => set('mac_address', e.target.value)} placeholder="AA:BB:CC:DD:EE:FF" required disabled={!!device} />
+          </div>
+          <div className="form-group">
+            <label>Device Key</label>
+            <input value={device?.device_key || 'Auto-generated'} readOnly style={{background:'#f3f4f6',cursor:'default'}} />
           </div>
           <div className="form-group">
             <label>Name</label>
@@ -424,13 +453,14 @@ function DeviceFormModal({ device, onSave, onClose }) {
           <div className="form-group">
             <label>License Type</label>
             <select value={form.license_type} onChange={e => set('license_type', e.target.value)}>
+              <option value="trial">Trial</option>
               <option value="yearly">Yearly</option>
               <option value="unlimited">Unlimited</option>
             </select>
           </div>
           <div className="form-group">
             <label>License Expires</label>
-            <input type="date" value={form.license_expires} onChange={e => set('license_expires', e.target.value)} />
+            <input type="date" value={form.license_expires_at} onChange={e => set('license_expires_at', e.target.value)} />
           </div>
           <div className="form-group">
             <label>Playlist URL</label>
@@ -445,6 +475,23 @@ function DeviceFormModal({ device, onSave, onClose }) {
             <input value={form.playlist_password} onChange={e => set('playlist_password', e.target.value)} placeholder="Password" />
           </div>
         </div>
+
+        {device && (
+          <div style={{margin:'16px 0',padding:'12px',background:'#f8f7fc',borderRadius:8}}>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:macMsg?8:0}}>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setChangeMac(!changeMac)}>Change MAC</button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={handleResetKey}>Reset Device Key</button>
+            </div>
+            {changeMac && (
+              <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+                <input value={newMac} onChange={e => setNewMac(e.target.value)} placeholder="New MAC address" style={{flex:1}} />
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleChangeMac}>Apply</button>
+              </div>
+            )}
+            {macMsg && <div style={{marginTop:8,fontSize:13,color:'#8b5cf6'}}>{macMsg}</div>}
+          </div>
+        )}
+
         <div className="form-actions">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>

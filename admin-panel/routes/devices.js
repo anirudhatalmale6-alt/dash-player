@@ -59,7 +59,7 @@ router.put('/:id', (req, res) => {
 
   const { name, status, license_type, license_expires_at, playlist_url, playlist_username, playlist_password } = req.body;
   db.prepare(
-    'UPDATE devices SET name = ?, status = ?, license_type = ?, license_expires_at = ?, playlist_url = ?, playlist_username = ?, playlist_password = ?, updated_at = datetime("now") WHERE id = ?'
+    'UPDATE devices SET name = ?, status = ?, license_type = ?, license_expires_at = ?, playlist_url = ?, playlist_username = ?, playlist_password = ?, updated_at = datetime(\'now\') WHERE id = ?'
   ).run(
     name ?? device.name, status ?? device.status, license_type ?? device.license_type,
     license_expires_at ?? device.license_expires_at, playlist_url ?? device.playlist_url,
@@ -88,7 +88,7 @@ router.post('/:id/reset-key', (req, res) => {
   const newKey = manual_key || crypto.randomBytes(8).toString('hex').toUpperCase();
 
   try {
-    db.prepare('UPDATE devices SET device_key = ?, updated_at = datetime("now") WHERE id = ?').run(newKey, req.params.id);
+    db.prepare('UPDATE devices SET device_key = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newKey, req.params.id);
     res.json({ success: true, device_key: newKey });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -107,7 +107,7 @@ router.post('/:id/hard-reset', (req, res) => {
     db.prepare(`UPDATE devices SET
       playlist_url = '', playlist_username = '', playlist_password = '',
       mac_changes_used = 0,
-      updated_at = datetime("now")
+      updated_at = datetime(\'now\')
       WHERE id = ?`).run(req.params.id);
   });
 
@@ -121,7 +121,7 @@ router.post('/:id/ban', (req, res) => {
   if (!device) return res.status(404).json({ error: 'Device not found' });
 
   const newBanStatus = device.is_banned ? 0 : 1;
-  db.prepare('UPDATE devices SET is_banned = ?, updated_at = datetime("now") WHERE id = ?').run(newBanStatus, req.params.id);
+  db.prepare('UPDATE devices SET is_banned = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newBanStatus, req.params.id);
   res.json({ success: true, is_banned: newBanStatus });
 });
 
@@ -133,7 +133,7 @@ router.post('/:id/change-mac', (req, res) => {
   const { new_mac } = req.body;
   if (!new_mac) return res.status(400).json({ error: 'new_mac is required' });
 
-  db.prepare('UPDATE devices SET mac_address = ?, updated_at = datetime("now") WHERE id = ?').run(new_mac, req.params.id);
+  db.prepare('UPDATE devices SET mac_address = ?, updated_at = datetime(\'now\') WHERE id = ?').run(new_mac, req.params.id);
   res.json({ success: true, mac_address: new_mac });
 });
 
@@ -147,7 +147,7 @@ router.put('/:id/mac-limit', (req, res) => {
     return res.status(400).json({ error: 'limit (number) is required' });
   }
 
-  db.prepare('UPDATE devices SET mac_change_limit = ?, updated_at = datetime("now") WHERE id = ?').run(limit, req.params.id);
+  db.prepare('UPDATE devices SET mac_change_limit = ?, updated_at = datetime(\'now\') WHERE id = ?').run(limit, req.params.id);
   res.json({ success: true, mac_change_limit: limit });
 });
 

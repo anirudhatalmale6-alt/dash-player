@@ -1267,7 +1267,7 @@ function SettingsScreen({ onBack, api }) {
   const [activeTab, setActiveTab] = useState('account');
   const [accountInfo, setAccountInfo] = useState({ status: 'Active', expDate: 'Unlimited', maxConnections: 1, activeCons: 0, username: 'N/A', createdAt: 'N/A', isTrial: false });
   const [vpnEnabled, setVpnEnabled] = useState(() => localStorage.getItem('dash_vpn_enabled') === 'true');
-  const [vpnProtocol, setVpnProtocol] = useState(() => localStorage.getItem('dash_vpn_protocol') || 'openvpn');
+  const [vpnProtocol, setVpnProtocol] = useState(() => localStorage.getItem('dash_vpn_protocol') || 'socks5');
   const [vpnServer, setVpnServer] = useState(() => localStorage.getItem('dash_vpn_server') || '');
   const [vpnPort, setVpnPort] = useState(() => localStorage.getItem('dash_vpn_port') || '');
   const [vpnUsername, setVpnUsername] = useState(() => localStorage.getItem('dash_vpn_username') || '');
@@ -1482,7 +1482,7 @@ function SettingsScreen({ onBack, api }) {
               </div>
               <div className="settings-card">
                 <h3 className="settings-card-title">Protocol & Server</h3>
-                <p className="settings-card-desc">Choose your VPN protocol and enter server details.</p>
+                <p className="settings-card-desc">Route all player traffic through a proxy server. Use SOCKS5 or HTTP proxy.</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div>
                     <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Protocol</label>
@@ -1493,15 +1493,7 @@ function SettingsScreen({ onBack, api }) {
                       style={{ width: '100%', padding: '10px 14px', fontSize: 13 }}
                     >
                       <option value="socks5">SOCKS5 Proxy</option>
-                      <option value="http">HTTP Proxy</option>
-                      <option value="openvpn">OpenVPN (UDP)</option>
-                      <option value="openvpn_tcp">OpenVPN (TCP)</option>
-                      <option value="wireguard">WireGuard</option>
-                      <option value="ikev2">IKEv2/IPSec</option>
-                      <option value="l2tp">L2TP/IPSec</option>
-                      <option value="pptp">PPTP</option>
-                      <option value="shadowsocks">Shadowsocks</option>
-                      <option value="softether">SoftEther</option>
+                      <option value="http">HTTP/HTTPS Proxy</option>
                     </select>
                   </div>
                   <div>
