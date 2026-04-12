@@ -307,7 +307,12 @@ ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
 
   return new Promise((resolve) => {
     // ffmpeg -i <url> exits with error (no output specified) but prints stream info to stderr
-    execFile(ffmpegPath, ['-i', url, '-hide_banner'], { timeout: 15000 }, (err, stdout, stderr) => {
+    execFile(ffmpegPath, [
+      '-hide_banner',
+      '-probesize', '5000000',       // 5MB - just enough for metadata
+      '-analyzeduration', '3000000', // 3 seconds
+      '-i', url,
+    ], { timeout: 8000 }, (err, stdout, stderr) => {
       const output = stderr || '';
       if (!output) {
         resolve({ success: false, error: 'No output from ffmpeg' });

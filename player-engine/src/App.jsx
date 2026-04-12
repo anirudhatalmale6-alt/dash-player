@@ -800,6 +800,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const [selectedSubtitle, setSelectedSubtitle] = useState(-1);
   const [showTrackMenu, setShowTrackMenu] = useState(null); // 'audio' | 'subtitle' | null
   const [usingFfmpeg, setUsingFfmpeg] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const probedRef = useRef(false); // track if we already probed this URL
   const mountedRef = useRef(true);
 
   const cleanup = useCallback(() => {
@@ -1115,23 +1117,9 @@ function VideoPlayer({ url, onClose, title, inline }) {
       }
     };
 
-    // Probe tracks with ffprobe for movies
-    if (!isLive && window.dashPlayer?.ffmpegProbe) {
-      window.dashPlayer.ffmpegProbe({ url }).then(probeResult => {
-        if (!probeResult?.success || !mountedRef.current) return;
-        console.log('[DashPlayer] FFprobe result:', probeResult);
-        if (probeResult.audio && probeResult.audio.length > 1) {
-          setAudioTracks(probeResult.audio.map((t, i) => ({
-            id: i, label: t.title || t.lang || `Audio ${i + 1}`, lang: t.lang || '', codec: t.codec,
-          })));
-        }
-        if (probeResult.subtitle && probeResult.subtitle.length > 0) {
-          setSubtitleTracks(probeResult.subtitle.map((t, i) => ({
-            id: i, label: t.title || t.lang || `Subtitle ${i + 1}`, lang: t.lang || '', codec: t.codec,
-          })));
-        }
-      }).catch(e => console.log('[DashPlayer] FFprobe error:', e));
-    }
+    // Don't auto-probe on mount - probe on demand when user opens track menu
+    // This avoids opening extra connections to the IPTV server
+    probedRef.current = false;
 
     // Build the format chain based on stream type
     // For live: HLS first (most channels), then FFmpeg (handles MP2/all codecs) - fast 2-step
@@ -1275,12 +1263,65 @@ function VideoPlayer({ url, onClose, title, inline }) {
     else if (video.webkitRequestFullscreen) video.webkitRequestFullscreen();
   };
 
+  // Probe tracks on demand (only when user clicks Tracks button)
+  const probeTracksOnDemand = async () => {
+    if (probedRef.current || probing || !url || !window.dashPlayer?.ffmpegProbe) return;
+    const isLive = url.includes('/live/') || url.includes('/timeshift/');
+    if (isLive) return;
+    setProbing(true);
+    console.log('[DashPlayer] Probing tracks on demand...');
+    try {
+      const probeResult = await window.dashPlayer.ffmpegProbe({ url });
+      if (!probeResult?.success || !mountedRef.current) {
+        console.log('[DashPlayer] Probe failed:', probeResult?.error);
+        setProbing(false);
+        probedRef.current = true;
+        return;
+      }
+      console.log('[DashPlayer] FFprobe result:', probeResult);
+      if (probeResult.audio && probeResult.audio.length > 1) {
+        setAudioTracks(probeResult.audio.map((t, i) => ({
+          id: i, label: t.title || t.lang || `Audio ${i + 1}`, lang: t.lang || '', codec: t.codec,
+        })));
+      }
+      if (probeResult.subtitle && probeResult.subtitle.length > 0) {
+        // Filter out bitmap subtitle formats (PGS, VobSub, DVB) - they can't convert to WebVTT
+        const bitmapCodecs = ['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'pgssub', 'dvdsub', 'dvbsub'];
+        const textSubs = probeResult.subtitle.filter(t => !bitmapCodecs.includes(t.codec?.toLowerCase()));
+        if (textSubs.length > 0) {
+          setSubtitleTracks(textSubs.map((t, i) => ({
+            id: t.index, label: t.title || t.lang || `Subtitle ${t.index + 1}`, lang: t.lang || '', codec: t.codec,
+          })));
+        } else {
+          console.log('[DashPlayer] Only bitmap subtitles found (PGS/VobSub) - not supported for extraction');
+        }
+      }
+      probedRef.current = true;
+    } catch (e) {
+      console.log('[DashPlayer] Probe error:', e);
+    }
+    setProbing(false);
+  };
+
   const TrackMenus = () => {
     const hasAudio = audioTracks.length > 1;
     const hasSubs = subtitleTracks.length > 0;
-    if (!hasAudio && !hasSubs) return null;
+    const isLive = url?.includes('/live/') || url?.includes('/timeshift/');
+    const isVod = !isLive;
+    const canProbe = isVod && window.dashPlayer?.ffmpegProbe && !probedRef.current;
+
+    // Show Tracks button for VOD content even before probing
+    if (!hasAudio && !hasSubs && !canProbe) return null;
+
     return (
       <div className="track-controls" style={{ display: 'flex', gap: 6, position: 'relative' }}>
+        {/* Show probe button for VOD if not yet probed */}
+        {canProbe && !hasAudio && !hasSubs && (
+          <button className="track-btn" onClick={probeTracksOnDemand} disabled={probing}
+            title="Detect audio & subtitle tracks" style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 4, padding: '4px 8px', cursor: probing ? 'wait' : 'pointer', fontSize: 12 }}>
+            {probing ? 'Scanning...' : 'Tracks'}
+          </button>
+        )}
         {hasAudio && (
           <div style={{ position: 'relative' }}>
             <button className="track-btn" onClick={() => setShowTrackMenu(showTrackMenu === 'audio' ? null : 'audio')}
