@@ -28,6 +28,7 @@
         <li><a href="#playlist" class="nav-link" data-section="playlist"><i class="fas fa-list"></i> Manage Playlist</a></li>
         <li><a href="#activate" class="nav-link" data-section="activate"><i class="fas fa-key"></i> Activate</a></li>
         <li><a href="#mac-change" class="nav-link" data-section="mac-change"><i class="fas fa-exchange-alt"></i> MAC Change</a></li>
+        <li><a href="#support" class="nav-link" data-section="support"><i class="fas fa-headset"></i> Support</a></li>
       </ul>
     </div>
   </nav>
@@ -464,6 +465,103 @@
     </div>
   </section>
 
+  <!-- ============ SUPPORT SECTION ============ -->
+  <section id="support" class="page">
+    <div class="section page-section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-badge">Support</span>
+          <h2 class="section-title">Contact Support</h2>
+          <p class="section-subtitle">Having issues? Submit a support ticket and we'll get back to you as soon as possible.</p>
+        </div>
+
+        <div class="card card-form">
+          <h3><i class="fas fa-ticket-alt"></i> Submit a Support Ticket</h3>
+          <form id="supportTicketForm">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="ticketMac">MAC Address</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-fingerprint"></i></span>
+                  <input type="text" id="ticketMac" placeholder="e.g. 0F:71:82:41:E6:DE">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="ticketDeviceKey">Device Key</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-key"></i></span>
+                  <input type="text" id="ticketDeviceKey" placeholder="Enter Device Key">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="ticketDepartment">Department <span style="color:#ef4444">*</span></label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-folder"></i></span>
+                  <select id="ticketDepartment" required>
+                    <option value="">Loading departments...</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group span-3">
+                <label for="ticketSubject">Subject <span style="color:#ef4444">*</span></label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-heading"></i></span>
+                  <input type="text" id="ticketSubject" placeholder="Brief description of your issue" required>
+                </div>
+              </div>
+              <div class="form-group span-3">
+                <label for="ticketMessage">Message <span style="color:#ef4444">*</span></label>
+                <textarea id="ticketMessage" rows="6" placeholder="Describe your issue in detail..." required></textarea>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit Ticket</button>
+          </form>
+          <div id="ticketError" class="alert alert-error" style="display:none;"></div>
+          <div id="ticketSuccess" class="alert alert-success" style="display:none;"></div>
+          <div id="ticketLoading" class="loading" style="display:none;">
+            <div class="spinner"></div>
+            <span>Submitting ticket...</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TERMS OF SERVICE SECTION ============ -->
+  <section id="tos" class="page">
+    <div class="section page-section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-badge">Legal</span>
+          <h2 class="section-title">Terms of Service</h2>
+        </div>
+        <div class="card">
+          <div id="tosContent" class="legal-content">
+            <div class="loading"><div class="spinner"></div><span>Loading...</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PRIVACY POLICY SECTION ============ -->
+  <section id="privacy" class="page">
+    <div class="section page-section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-badge">Legal</span>
+          <h2 class="section-title">Privacy Policy</h2>
+        </div>
+        <div class="card">
+          <div id="privacyContent" class="legal-content">
+            <div class="loading"><div class="spinner"></div><span>Loading...</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="footer">
     <div class="container">
@@ -482,16 +580,17 @@
             <li><a href="#playlist">Manage Playlist</a></li>
             <li><a href="#activate">Activate</a></li>
             <li><a href="#mac-change">MAC Change</a></li>
+            <li><a href="#support">Support</a></li>
             <li><a href="https://dashplayer.eu/download/DashPlayerSetup.exe">Download</a></li>
           </ul>
         </div>
         <div class="footer-links">
           <h4>Support</h4>
           <ul>
+            <li><a href="#support">Contact Support</a></li>
             <li><a href="mailto:support@dashplayer.eu">support@dashplayer.eu</a></li>
-            <li><a href="#">FAQ</a></li>
-            <li><a href="#">Terms of Service</a></li>
-            <li><a href="#">Privacy Policy</a></li>
+            <li><a href="#tos">Terms of Service</a></li>
+            <li><a href="#privacy">Privacy Policy</a></li>
           </ul>
         </div>
       </div>

@@ -322,15 +322,16 @@ function DevicesPage() {
                 <th>Status</th>
                 <th>License</th>
                 <th>Expires</th>
-                <th>Playlist URL</th>
+                <th>Last IP</th>
+                <th>User Agent</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="8" className="empty-cell">Loading...</td></tr>
+                <tr><td colSpan="9" className="empty-cell">Loading...</td></tr>
               ) : devices.length === 0 ? (
-                <tr><td colSpan="8" className="empty-cell">No devices found</td></tr>
+                <tr><td colSpan="9" className="empty-cell">No devices found</td></tr>
               ) : devices.map(d => (
                 <tr key={d.id}>
                   <td className="mono">{d.mac_address}</td>
@@ -339,7 +340,8 @@ function DevicesPage() {
                   <td><span className={`badge badge-${d.status === 'active' ? 'success' : d.status === 'trial' ? 'warning' : d.status === 'expired' ? 'danger' : 'default'}`}>{d.status}</span></td>
                   <td>{d.license_type || '-'}</td>
                   <td>{d.license_expires_at ? new Date(d.license_expires_at).toLocaleDateString() : '-'}</td>
-                  <td className="mono" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.playlist_url || '-'}</td>
+                  <td style={{ fontSize: '0.8em' }}>{d.last_ip || '-'}</td>
+                  <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.75em' }} title={d.user_agent || ''}>{d.user_agent || '-'}</td>
                   <td>
                     <div className="action-btns">
                       <button className="btn btn-sm btn-ghost" onClick={() => { setEditDevice(d); setShowModal(true); }}>Edit</button>
@@ -782,16 +784,59 @@ function SettingsPage() {
     mollie_api_key: '',
     trial_days: 3,
     payment_enabled: true,
+    blocked_message: 'This device has been blocked. Please contact support for assistance.',
+    tos_content: '',
+    privacy_content: '',
+    smtp_host: '',
+    smtp_port: '587',
+    smtp_user: '',
+    smtp_pass: '',
+    smtp_from: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [departments, setDepartments] = useState([]);
+  const [newDeptName, setNewDeptName] = useState('');
+  const [deptLoading, setDeptLoading] = useState(false);
 
   useEffect(() => {
     api.get('/settings')
       .then(r => setSettings(prev => ({ ...prev, ...(r.data.settings || r.data || {}) })))
       .catch(() => showToast('Failed to load settings', 'error'))
       .finally(() => setLoading(false));
+    fetchDepartments();
   }, []);
+
+  const fetchDepartments = () => {
+    api.get('/tickets/departments/all')
+      .then(r => setDepartments(r.data || []))
+      .catch(() => {});
+  };
+
+  const handleAddDept = async () => {
+    if (!newDeptName.trim()) return;
+    setDeptLoading(true);
+    try {
+      await api.post('/tickets/departments', { name: newDeptName.trim() });
+      setNewDeptName('');
+      fetchDepartments();
+      showToast('Department added');
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to add department', 'error');
+    } finally {
+      setDeptLoading(false);
+    }
+  };
+
+  const handleDeleteDept = async (id) => {
+    try {
+      await api.delete(`/tickets/departments/${id}`);
+      fetchDepartments();
+      showToast('Department deleted');
+    } catch {
+      showToast('Failed to delete department', 'error');
+    }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -829,6 +874,15 @@ function SettingsPage() {
                   <option value="false">No</option>
                 </select>
               </div>
+              <div className="form-group span-2">
+                <label>Blocked Device Message</label>
+                <textarea
+                  value={settings.blocked_message || ''}
+                  onChange={e => set('blocked_message', e.target.value)}
+                  rows="3"
+                  placeholder="Message shown to blocked devices..."
+                />
+              </div>
             </div>
           </div>
 
@@ -855,13 +909,293 @@ function SettingsPage() {
               </div>
             </div>
           </div>
+
+          <div className="card settings-card">
+            <h3 className="card-title">SMTP (Email Notifications)</h3>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>SMTP Host</label>
+                <input value={settings.smtp_host || ''} onChange={e => set('smtp_host', e.target.value)} placeholder="smtp.example.com" />
+              </div>
+              <div className="form-group">
+                <label>SMTP Port</label>
+                <input type="number" value={settings.smtp_port || '587'} onChange={e => set('smtp_port', e.target.value)} placeholder="587" />
+              </div>
+              <div className="form-group">
+                <label>SMTP Username</label>
+                <input value={settings.smtp_user || ''} onChange={e => set('smtp_user', e.target.value)} placeholder="user@example.com" />
+              </div>
+              <div className="form-group">
+                <label>SMTP Password</label>
+                <input type="password" value={settings.smtp_pass || ''} onChange={e => set('smtp_pass', e.target.value)} placeholder="Password" />
+              </div>
+              <div className="form-group span-2">
+                <label>From Address</label>
+                <input value={settings.smtp_from || ''} onChange={e => set('smtp_from', e.target.value)} placeholder="no-reply@example.com" />
+              </div>
+            </div>
+          </div>
+
+          <div className="card settings-card">
+            <h3 className="card-title">Terms of Service</h3>
+            <div className="form-grid">
+              <div className="form-group span-2">
+                <label>TOS Content (HTML supported)</label>
+                <textarea
+                  value={settings.tos_content || ''}
+                  onChange={e => set('tos_content', e.target.value)}
+                  rows="10"
+                  placeholder="Enter your Terms of Service content here..."
+                  style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="card settings-card">
+            <h3 className="card-title">Privacy Policy</h3>
+            <div className="form-grid">
+              <div className="form-group span-2">
+                <label>Privacy Policy Content (HTML supported)</label>
+                <textarea
+                  value={settings.privacy_content || ''}
+                  onChange={e => set('privacy_content', e.target.value)}
+                  rows="10"
+                  placeholder="Enter your Privacy Policy content here..."
+                  style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="form-actions" style={{ marginTop: '1.5rem' }}>
           <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</button>
         </div>
       </form>
+
+      {/* Departments Management */}
+      <div className="card settings-card" style={{ marginTop: '1.5rem' }}>
+        <h3 className="card-title">Support Departments</h3>
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <input
+              value={newDeptName}
+              onChange={e => setNewDeptName(e.target.value)}
+              placeholder="New department name"
+              style={{ flex: 1 }}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddDept())}
+            />
+            <button className="btn btn-primary btn-sm" onClick={handleAddDept} disabled={deptLoading || !newDeptName.trim()}>
+              + Add
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Department Name</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {departments.length === 0 ? (
+                <tr><td colSpan="3" className="empty-cell">No departments yet</td></tr>
+              ) : departments.map(d => (
+                <tr key={d.id}>
+                  <td>{d.id}</td>
+                  <td>{d.name}</td>
+                  <td>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDeleteDept(d.id)}>Del</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
+  );
+}
+
+/* ─────────────── Tickets Page ─────────────── */
+function TicketsPage() {
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [total, setTotal] = useState(0);
+
+  const fetchTickets = useCallback(() => {
+    setLoading(true);
+    const params = {};
+    if (statusFilter) params.status = statusFilter;
+    api.get('/tickets', { params })
+      .then(r => {
+        setTickets(r.data.tickets || r.data || []);
+        setTotal(r.data.total ?? 0);
+      })
+      .catch(() => showToast('Failed to load tickets', 'error'))
+      .finally(() => setLoading(false));
+  }, [statusFilter]);
+
+  useEffect(() => { fetchTickets(); }, [fetchTickets]);
+
+  const statusColor = (s) => {
+    if (s === 'open') return 'warning';
+    if (s === 'answered') return 'success';
+    if (s === 'closed') return 'default';
+    return 'default';
+  };
+
+  return (
+    <div>
+      <div className="page-header">
+        <h2 className="page-title">Support Tickets</h2>
+        <span className="text-muted" style={{ fontSize: '0.9rem' }}>{total} total</span>
+      </div>
+
+      <div className="filter-bar">
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">All Statuses</option>
+          <option value="open">Open</option>
+          <option value="answered">Answered</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
+
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>MAC</th>
+                <th>Department</th>
+                <th>Subject</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan="7" className="empty-cell">Loading...</td></tr>
+              ) : tickets.length === 0 ? (
+                <tr><td colSpan="7" className="empty-cell">No tickets found</td></tr>
+              ) : tickets.map(t => (
+                <tr key={t.id}>
+                  <td>#{t.id}</td>
+                  <td>{new Date(t.created_at).toLocaleDateString()}</td>
+                  <td className="mono" style={{ fontSize: '0.8em' }}>{t.device_mac || '-'}</td>
+                  <td>{t.department_name || '-'}</td>
+                  <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject}</td>
+                  <td><span className={`badge badge-${statusColor(t.status)}`}>{t.status}</span></td>
+                  <td>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setSelectedTicket(t)}>View</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedTicket && (
+        <TicketDetailModal
+          ticket={selectedTicket}
+          onClose={() => { setSelectedTicket(null); fetchTickets(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TicketDetailModal({ ticket, onClose }) {
+  const [detail, setDetail] = useState(ticket);
+  const [reply, setReply] = useState(ticket.admin_reply || '');
+  const [status, setStatus] = useState(ticket.status || 'open');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get(`/tickets/${ticket.id}`)
+      .then(r => {
+        setDetail(r.data);
+        setReply(r.data.admin_reply || '');
+        setStatus(r.data.status || 'open');
+      })
+      .catch(() => {});
+  }, [ticket.id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/tickets/${ticket.id}`, { admin_reply: reply, status });
+      showToast('Ticket updated');
+      onClose();
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to update ticket', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Delete this ticket?')) return;
+    try {
+      await api.delete(`/tickets/${ticket.id}`);
+      showToast('Ticket deleted');
+      onClose();
+    } catch {
+      showToast('Failed to delete ticket', 'error');
+    }
+  };
+
+  return (
+    <Modal title={`Ticket #${detail.id} — ${detail.subject}`} onClose={onClose}>
+      <div style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem', fontSize: '0.875rem', color: '#6b7280' }}>
+          <span><strong>Date:</strong> {new Date(detail.created_at).toLocaleString()}</span>
+          <span><strong>MAC:</strong> {detail.device_mac || 'N/A'}</span>
+          <span><strong>Key:</strong> {detail.device_key || 'N/A'}</span>
+          <span><strong>Dept:</strong> {detail.department_name || 'N/A'}</span>
+        </div>
+        <div className="form-group">
+          <label>Message from User</label>
+          <div style={{ background: '#f8f7fc', border: '1px solid #e5e7eb', borderRadius: 6, padding: '0.75rem', whiteSpace: 'pre-wrap', fontSize: '0.9rem' }}>
+            {detail.message || '-'}
+          </div>
+        </div>
+      </div>
+      <div className="form-grid">
+        <div className="form-group span-2">
+          <label>Admin Reply</label>
+          <textarea
+            value={reply}
+            onChange={e => setReply(e.target.value)}
+            rows="5"
+            placeholder="Type your reply here..."
+          />
+        </div>
+        <div className="form-group">
+          <label>Status</label>
+          <select value={status} onChange={e => setStatus(e.target.value)}>
+            <option value="open">Open</option>
+            <option value="answered">Answered</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+      </div>
+      <div className="form-actions" style={{ justifyContent: 'space-between' }}>
+        <button className="btn btn-danger btn-sm" onClick={handleDelete}>Delete Ticket</button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Reply'}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -871,6 +1205,7 @@ const NAV_ITEMS = [
   { key: 'devices', label: 'Devices', icon: '\uD83D\uDCF1' },
   { key: 'packages', label: 'Packages', icon: '\uD83D\uDCE6' },
   { key: 'payments', label: 'Payments', icon: '\uD83D\uDCB3' },
+  { key: 'tickets', label: 'Tickets', icon: '\uD83D\uDCEC' },
   { key: 'settings', label: 'Settings', icon: '\u2699' },
 ];
 
@@ -934,6 +1269,7 @@ export default function AdminApp() {
     case 'devices': PageComponent = DevicesPage; break;
     case 'packages': PageComponent = PackagesPage; break;
     case 'payments': PageComponent = PaymentsPage; break;
+    case 'tickets': PageComponent = TicketsPage; break;
     case 'settings': PageComponent = SettingsPage; break;
     default: PageComponent = DashboardPage;
   }

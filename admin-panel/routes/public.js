@@ -7,6 +7,10 @@ router.post('/device/lookup', (req, res) => {
   const { mac_address, device_key } = req.body;
   if (!mac_address || !device_key) return res.status(400).json({ error: 'MAC address and Device Key are required' });
 
+  // Capture user agent and IP
+  const userAgent = req.headers['user-agent'] || '';
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '';
+
   let device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
 
   // Auto-register as trial device if not found
@@ -21,10 +25,20 @@ router.post('/device/lookup', (req, res) => {
 
     // Create new trial device
     const result = db.prepare(
-      'INSERT INTO devices (mac_address, device_key, name, status, license_type) VALUES (?, ?, ?, ?, ?)'
-    ).run(mac_address, device_key, '', 'active', 'trial');
+      "INSERT INTO devices (mac_address, device_key, name, status, license_type, user_agent, last_ip) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run(mac_address, device_key, '', 'active', 'trial', userAgent, clientIp);
 
     device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at FROM devices WHERE id = ?').get(result.lastInsertRowid);
+  } else {
+    // Update user_agent and last_ip for existing device
+    db.prepare("UPDATE devices SET user_agent = ?, last_ip = ?, updated_at = datetime('now') WHERE id = ?").run(userAgent, clientIp, device.id);
+  }
+
+  // Check if device is blocked - return blocked_message
+  if (device.status === 'blocked') {
+    const blockedMsgRow = db.prepare("SELECT value FROM settings WHERE key = 'blocked_message'").get();
+    const blockedMessage = blockedMsgRow ? blockedMsgRow.value : 'This device has been blocked. Please contact support for assistance.';
+    return res.status(403).json({ error: blockedMessage, blocked: true, blocked_message: blockedMessage });
   }
 
   // Check license validity
@@ -195,6 +209,36 @@ router.post('/device/mac-change', (req, res) => {
 router.get('/packages', (req, res) => {
   const packages = db.prepare('SELECT * FROM packages WHERE is_active = 1 ORDER BY price ASC').all();
   res.json(packages);
+});
+
+// TOS page (public)
+router.get('/pages/tos', (req, res) => {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'tos_content'").get();
+  res.json({ content: row ? row.value : '' });
+});
+
+// Privacy Policy page (public)
+router.get('/pages/privacy', (req, res) => {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'privacy_content'").get();
+  res.json({ content: row ? row.value : '' });
+});
+
+// Get departments (public)
+router.get('/departments', (req, res) => {
+  const departments = db.prepare('SELECT * FROM ticket_departments ORDER BY id ASC').all();
+  res.json(departments);
+});
+
+// Submit ticket (public)
+router.post('/tickets', (req, res) => {
+  const { device_mac, device_key, department_id, subject, message } = req.body;
+  if (!subject || !message) return res.status(400).json({ error: 'Subject and message are required' });
+
+  const result = db.prepare(
+    "INSERT INTO tickets (device_mac, device_key, department_id, subject, message) VALUES (?, ?, ?, ?, ?)"
+  ).run(device_mac || '', device_key || '', department_id || null, subject, message);
+
+  res.json({ success: true, ticket_id: result.lastInsertRowid, message: 'Ticket submitted successfully. Reference #' + result.lastInsertRowid });
 });
 
 module.exports = router;

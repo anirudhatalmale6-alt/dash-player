@@ -105,6 +105,44 @@ try { db.exec('ALTER TABLE devices ADD COLUMN mac_change_limit INTEGER DEFAULT 1
 try { db.exec('ALTER TABLE devices ADD COLUMN mac_changes_used INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
 try { db.exec('ALTER TABLE devices ADD COLUMN is_banned INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
 try { db.exec("ALTER TABLE playlists ADD COLUMN output_format TEXT DEFAULT 'm3u8'"); } catch (e) { /* column exists */ }
+try { db.exec("ALTER TABLE devices ADD COLUMN user_agent TEXT DEFAULT ''"); } catch (e) { /* column exists */ }
+try { db.exec("ALTER TABLE devices ADD COLUMN last_ip TEXT DEFAULT ''"); } catch (e) { /* column exists */ }
+
+// Create ticket-related tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ticket_departments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_mac TEXT NOT NULL DEFAULT '',
+    device_key TEXT NOT NULL DEFAULT '',
+    department_id INTEGER,
+    subject TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    status TEXT DEFAULT 'open' CHECK(status IN ('open', 'answered', 'closed')),
+    admin_reply TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (department_id) REFERENCES ticket_departments(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+  CREATE INDEX IF NOT EXISTS idx_tickets_mac ON tickets(device_mac);
+`);
+
+// Insert default departments if none exist
+const deptCount = db.prepare('SELECT COUNT(*) as count FROM ticket_departments').get();
+if (deptCount.count === 0) {
+  const insertDept = db.prepare('INSERT INTO ticket_departments (name) VALUES (?)');
+  insertDept.run('MAC Not Activated');
+  insertDept.run('Playlist Problems');
+  insertDept.run('Device Blocked');
+  insertDept.run('Request MAC Change');
+}
 
 // Insert default settings if not exist
 const defaultSettings = [
@@ -119,6 +157,14 @@ const defaultSettings = [
   ['support_url', 'https://panel.dashplayer.tv'],
   ['vat_enabled', '0'],
   ['vat_rate', '0'],
+  ['blocked_message', 'This device has been blocked. Please contact support for assistance.'],
+  ['tos_content', ''],
+  ['privacy_content', ''],
+  ['smtp_host', ''],
+  ['smtp_port', '587'],
+  ['smtp_user', ''],
+  ['smtp_pass', ''],
+  ['smtp_from', ''],
 ];
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

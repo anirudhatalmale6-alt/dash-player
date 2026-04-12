@@ -546,6 +546,14 @@ img {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.form-group.span-2 {
+  grid-column: span 2;
+}
+
+.form-group.span-3 {
+  grid-column: span 3;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -1049,4 +1057,52 @@ img {
   .price-amount {
     font-size: 2.25rem;
   }
+}
+
+/* ============ Legal Pages (TOS / Privacy) ============ */
+.legal-content {
+  padding: 0.5rem 0;
+  line-height: 1.8;
+  color: #374151;
+}
+.legal-content h1,
+.legal-content h2,
+.legal-content h3 {
+  color: #1e1b2e;
+  margin: 1.5rem 0 0.5rem;
+}
+.legal-content h1 { font-size: 1.6rem; }
+.legal-content h2 { font-size: 1.25rem; }
+.legal-content h3 { font-size: 1.05rem; }
+.legal-content p {
+  margin-bottom: 1rem;
+}
+.legal-content ul,
+.legal-content ol {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.legal-content a {
+  color: #7c3aed;
+  text-decoration: underline;
+}
+
+/* ============ Support / Ticket Form ============ */
+#supportTicketForm textarea {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 1.5px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  color: #1e1b2e;
+  background: white;
+  resize: vertical;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+#supportTicketForm textarea:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
 }

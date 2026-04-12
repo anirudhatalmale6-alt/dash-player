@@ -11,6 +11,8 @@ let currentPlaylistKey = '';
 let currentActivateMac = '';
 let currentActivateKey = '';
 let devicePlaylists = [];
+let tosLoaded = false;
+let privacyLoaded = false;
 
 // ---- DOM Ready ----
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initPlaylistPage();
   initActivatePage();
   initMacChangePage();
+  initSupportPage();
 });
 
 // ============ Router ============
@@ -32,7 +35,7 @@ function handleRoute() {
   const rawHash = (window.location.hash || '#home').replace('#', '');
   // Parse section and query params from hash (e.g. activate?mac=XX&key=YY)
   const [section_raw, queryString] = rawHash.split('?');
-  const validSections = ['home', 'playlist', 'activate', 'mac-change'];
+  const validSections = ['home', 'playlist', 'activate', 'mac-change', 'support', 'tos', 'privacy'];
   const section = validSections.includes(section_raw) ? section_raw : 'home';
 
   // Hide all pages
@@ -71,6 +74,16 @@ function handleRoute() {
       currentActivateKey = decodeURIComponent(key);
       lookupActivateDevice(currentActivateMac, currentActivateKey);
     }
+  }
+
+  // Load TOS/Privacy lazily on first visit
+  if (section === 'tos' && !tosLoaded) {
+    tosLoaded = true;
+    loadLegalPage('tos', 'tosContent');
+  }
+  if (section === 'privacy' && !privacyLoaded) {
+    privacyLoaded = true;
+    loadLegalPage('privacy', 'privacyContent');
   }
 
   // Auto-fill playlist form from URL params
@@ -384,6 +397,90 @@ async function handleMacChange() {
     showError('macChangeError', err.message || 'Failed to submit MAC change request. Please check your details and try again.');
   } finally {
     hideEl('macChangeLoading');
+  }
+}
+
+// ============ Support / Tickets Page ============
+
+function initSupportPage() {
+  // Load departments into dropdown
+  loadDepartments();
+
+  const form = document.getElementById('supportTicketForm');
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await handleTicketSubmit();
+  });
+}
+
+async function loadDepartments() {
+  try {
+    const depts = await apiGet('/departments');
+    const select = document.getElementById('ticketDepartment');
+    if (!select) return;
+    if (!depts || depts.length === 0) {
+      select.innerHTML = '<option value="">No departments available</option>';
+      return;
+    }
+    select.innerHTML = '<option value="">Select a department</option>' +
+      depts.map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
+  } catch (err) {
+    const select = document.getElementById('ticketDepartment');
+    if (select) select.innerHTML = '<option value="">Failed to load departments</option>';
+  }
+}
+
+async function handleTicketSubmit() {
+  const mac = document.getElementById('ticketMac')?.value.trim() || '';
+  const deviceKey = document.getElementById('ticketDeviceKey')?.value.trim() || '';
+  const departmentId = document.getElementById('ticketDepartment')?.value || null;
+  const subject = document.getElementById('ticketSubject')?.value.trim() || '';
+  const message = document.getElementById('ticketMessage')?.value.trim() || '';
+
+  if (!subject || !message) return;
+
+  showEl('ticketLoading');
+  hideEl('ticketError');
+  hideEl('ticketSuccess');
+
+  try {
+    const data = await apiPost('/tickets', {
+      device_mac: mac,
+      device_key: deviceKey,
+      department_id: departmentId ? parseInt(departmentId) : null,
+      subject,
+      message
+    });
+
+    showSuccess('ticketSuccess', data.message || 'Ticket submitted successfully! Reference #' + (data.ticket_id || ''));
+
+    // Clear form
+    document.getElementById('ticketMac').value = '';
+    document.getElementById('ticketDeviceKey').value = '';
+    document.getElementById('ticketDepartment').value = '';
+    document.getElementById('ticketSubject').value = '';
+    document.getElementById('ticketMessage').value = '';
+  } catch (err) {
+    showError('ticketError', err.message || 'Failed to submit ticket. Please try again.');
+  } finally {
+    hideEl('ticketLoading');
+  }
+}
+
+// ============ TOS / Privacy Page ============
+
+async function loadLegalPage(type, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  try {
+    const data = await apiGet('/pages/' + type);
+    if (data.content && data.content.trim()) {
+      el.innerHTML = data.content;
+    } else {
+      el.innerHTML = '<p style="color:#6b7280;text-align:center;padding:2rem;">Content coming soon.</p>';
+    }
+  } catch (err) {
+    el.innerHTML = '<p style="color:#ef4444;text-align:center;padding:2rem;">Failed to load content. Please try again later.</p>';
   }
 }
 

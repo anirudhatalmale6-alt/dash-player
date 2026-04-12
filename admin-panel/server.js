@@ -22,6 +22,7 @@ app.use('/api/packages', authMiddleware, require('./routes/packages'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/settings', authMiddleware, require('./routes/settings'));
 app.use('/api/dashboard', authMiddleware, require('./routes/dashboard'));
+app.use('/api/tickets', authMiddleware, require('./routes/tickets'));
 
 // Player device auth (no admin JWT needed)
 app.post('/api/player/auth', (req, res) => {
