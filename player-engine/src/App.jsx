@@ -551,6 +551,12 @@ function createXtreamApi(url, username, password, outputFormat = 'm3u8') {
     getEPG: (streamId) => req('get_short_epg', { stream_id: streamId }),
     getFullEPG: (streamId) => req('get_simple_data_table', { stream_id: streamId }),
     getLiveUrl: (streamId) => `${baseUrl}/live/${username}/${password}/${streamId}.${liveExt}`,
+    getRadioUrl: (streamId) => `${baseUrl}/live/${username}/${password}/${streamId}.mp3`,
+    getRadioUrls: (streamId) => [
+      `${baseUrl}/radio/${username}/${password}/${streamId}.mp3`,
+      `${baseUrl}/live/${username}/${password}/${streamId}.mp3`,
+      `${baseUrl}/live/${username}/${password}/${streamId}.${liveExt}`,
+    ],
     getVodUrl: (streamId, ext = 'mp4') => `${baseUrl}/movie/${username}/${password}/${streamId}.${ext}`,
     getSeriesUrl: (streamId, ext = 'mp4') => `${baseUrl}/series/${username}/${password}/${streamId}.${ext}`,
     getTimeshiftUrl: (streamId, start, duration) => `${baseUrl}/timeshift/${username}/${password}/${duration}/${start}/${streamId}.${liveExt}`,
@@ -1738,12 +1744,57 @@ function RadioScreen({ onBack, api }) {
     return matchCat && matchSearch;
   });
 
-  const handlePlay = (station) => {
-    if (api) {
-      const url = api.getLiveUrl(station.stream_id);
-      setPlaying(station);
-      setPlayingUrl(url);
-    }
+  const audioRef = useRef(null);
+  const [radioLoading, setRadioLoading] = useState(false);
+  const [radioError, setRadioError] = useState(null);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+    };
+  }, []);
+
+  const handlePlay = async (station) => {
+    if (!api) return;
+    // Stop previous audio
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+    setPlaying(station);
+    setRadioLoading(true);
+    setRadioError(null);
+    setPlayingUrl(null);
+
+    // Try radio-specific URLs first (mp3), then fallback to live URL
+    const urls = api.getRadioUrls(station.stream_id);
+    const audio = new Audio();
+    audioRef.current = audio;
+    let tried = 0;
+
+    const tryNext = () => {
+      if (tried >= urls.length) {
+        // All radio URLs failed, fall back to VideoPlayer with live URL
+        setRadioLoading(false);
+        const liveUrl = api.getLiveUrl(station.stream_id);
+        setPlayingUrl(liveUrl);
+        return;
+      }
+      const url = urls[tried++];
+      console.log(`[DashPlayer] Trying radio URL ${tried}/${urls.length}: ${url}`);
+      audio.src = url;
+      audio.oncanplay = () => { setRadioLoading(false); setRadioError(null); };
+      audio.onplaying = () => { setRadioLoading(false); setRadioError(null); };
+      audio.onerror = () => { tryNext(); };
+      audio.play().catch(() => { tryNext(); });
+    };
+    tryNext();
+  };
+
+  const handleStop = () => {
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+    setPlaying(null);
+    setPlayingUrl(null);
+    setRadioLoading(false);
+    setRadioError(null);
   };
 
   return (
@@ -1787,7 +1838,22 @@ function RadioScreen({ onBack, api }) {
           ))}
         </div>
       </div>
-      {playingUrl && <VideoPlayer url={playingUrl} title={playing?.name || 'Radio'} onClose={() => { setPlayingUrl(null); setPlaying(null); }} />}
+      {/* Audio radio player bar */}
+      {playing && !playingUrl && (
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'linear-gradient(135deg, #1a1a2e, #16213e)', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 16, zIndex: 1000, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          {playing.stream_icon ? <img src={playing.stream_icon} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'contain', background: '#0f0f23' }} onError={e => { e.target.style.display='none'; }} /> : <span style={{ fontSize: 28 }}>&#127911;</span>}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{playing.name}</div>
+            <div style={{ fontSize: 11, opacity: 0.6 }}>{radioLoading ? t('connecting') + '...' : radioError ? radioError : playing._category_name || t('radio')}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {!radioLoading && !radioError && <div className="radio-playing-indicator" style={{ marginRight: 8 }}><span className="radio-bar"></span><span className="radio-bar"></span><span className="radio-bar"></span></div>}
+            <button onClick={handleStop} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: 36, height: 36, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&#9632;</button>
+          </div>
+        </div>
+      )}
+      {/* Fallback to VideoPlayer for non-mp3 radio streams */}
+      {playingUrl && <VideoPlayer url={playingUrl} title={playing?.name || 'Radio'} onClose={() => { handleStop(); }} />}
     </div>
   );
 }
