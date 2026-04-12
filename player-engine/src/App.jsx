@@ -1527,10 +1527,83 @@ function MediaScreen({ type, onBack, api }) {
     const allEpisodes = currentSeason && seriesInfo?.episodes?.[currentSeason] ? seriesInfo.episodes[currentSeason] : [];
     const totalEpPages = Math.ceil(allEpisodes.length / EP_PER_PAGE);
     const currentEpisodes = allEpisodes.slice(epPage * EP_PER_PAGE, (epPage + 1) * EP_PER_PAGE);
+
+    // If an episode is playing, show Live TV-style layout
+    if (playingItem && api) {
+      return (
+        <div className="section-screen" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+          <div className="section-header" style={{ flexShrink: 0 }}>
+            <button className="back-btn" onClick={() => setPlayingItem(null)}>&#8592; {t('back')}</button>
+            <h1 className="section-title">{selectedSeries.name}</h1>
+          </div>
+          <div className="live-player-area" style={{ flex: 1 }}>
+            <div className="live-player-main">
+              <div className="live-player-top">
+                <div className="live-player-info">
+                  <span className="live-player-channel-name">{playingItem.name}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>S{currentSeason}</span>
+                </div>
+                <div className="live-player-actions">
+                  <button className="back-btn" onClick={() => setPlayingItem(null)}>&#9632; Stop</button>
+                </div>
+              </div>
+              <div className="live-player-video">
+                <VideoPlayer
+                  key={playingItem.stream_id}
+                  url={api.getSeriesUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')}
+                  title={playingItem.name}
+                  onClose={() => setPlayingItem(null)}
+                  inline={true}
+                />
+              </div>
+              {/* Season tabs at bottom of player */}
+              <div style={{ display: 'flex', gap: 6, padding: '8px 12px', background: 'var(--card-bg)', borderTop: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0 }}>
+                {seasons.map(season => (
+                  <button key={season} className={`season-tab ${(currentSeason === season) ? 'active' : ''}`}
+                    onClick={() => { setActiveSeason(season); setEpPage(0); }}
+                    style={{ whiteSpace: 'nowrap', fontSize: 11, padding: '4px 10px' }}>
+                    S{season}
+                    <span className="season-tab-count" style={{ marginLeft: 4 }}>{seriesInfo.episodes[season].length}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Episodes list on right side */}
+            <div className="live-player-channels" style={{ overflowY: 'auto' }}>
+              <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                {allEpisodes.length} episodes
+                {totalEpPages > 1 && (
+                  <span style={{ float: 'right' }}>
+                    <button className="ep-page-btn" disabled={epPage === 0} onClick={() => setEpPage(p => p - 1)} style={{ fontSize: 10, padding: '1px 6px' }}>&#8592;</button>
+                    <span style={{ margin: '0 4px' }}>{epPage + 1}/{totalEpPages}</span>
+                    <button className="ep-page-btn" disabled={epPage >= totalEpPages - 1} onClick={() => setEpPage(p => p + 1)} style={{ fontSize: 10, padding: '1px 6px' }}>&#8594;</button>
+                  </span>
+                )}
+              </div>
+              {currentEpisodes.map(ep => (
+                <div key={ep.id} className={`ch-item ${playingItem?.stream_id === ep.id ? 'active' : ''}`}
+                  onClick={() => setPlayingItem({
+                    stream_id: ep.id, name: ep.title || `Episode ${ep.episode_num}`,
+                    container_extension: ep.container_extension || 'mp4', isSeries: true
+                  })}>
+                  <span className="ch-num" style={{ fontSize: 10, minWidth: 28 }}>E{ep.episode_num}</span>
+                  <div className="ch-info" style={{ minWidth: 0 }}>
+                    <div className="ch-name" style={{ fontSize: 11 }}>{ep.title || `Episode ${ep.episode_num}`}</div>
+                    {ep.info?.duration && <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>{ep.info.duration}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Series detail view (no episode playing yet)
     return (
       <div className="section-screen">
         <div className="section-header">
-          <button className="back-btn" onClick={() => { setSelectedSeries(null); setSeriesInfo(null); setActiveSeason(null); setEpPage(0); }}>&#8592; Back</button>
+          <button className="back-btn" onClick={() => { setSelectedSeries(null); setSeriesInfo(null); setActiveSeason(null); setEpPage(0); }}>&#8592; {t('back')}</button>
           <h1 className="section-title">{selectedSeries.name}</h1>
         </div>
         <div className="section-body">
@@ -1596,9 +1669,6 @@ function MediaScreen({ type, onBack, api }) {
             {!seriesLoading && seasons.length === 0 && <div className="loading-indicator">No episode data available</div>}
           </div>
         </div>
-        {playingItem && api && (
-          <VideoPlayer url={api.getSeriesUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')} title={playingItem.name || playingItem.title} onClose={() => setPlayingItem(null)} />
-        )}
       </div>
     );
   }
