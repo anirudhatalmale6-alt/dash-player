@@ -1652,18 +1652,31 @@ function RadioScreen({ onBack, api }) {
         // Method 1: Try dedicated radio API endpoints (some Xtream servers support this)
         const radioCatsApi = await api.getRadioCategories();
         if (radioCatsApi && Array.isArray(radioCatsApi) && radioCatsApi.length > 0) {
-          console.log('[DashPlayer] Dedicated radio categories found:', radioCatsApi.map(c => c.category_name));
-          const allStreams = [];
-          for (const cat of radioCatsApi) {
-            const streams = await api.getRadioStreams(cat.category_id);
-            if (streams && Array.isArray(streams)) {
-              streams.forEach(s => allStreams.push({ ...s, _category_name: cat.category_name }));
+          console.log('[DashPlayer] Dedicated radio categories found:', radioCatsApi.map(c => `${c.category_id}:${c.category_name}`));
+          let allStreams = [];
+          // First try: fetch all radio streams at once (no category filter)
+          const allRadio = await api.getRadioStreams();
+          if (allRadio && Array.isArray(allRadio) && allRadio.length > 0) {
+            console.log('[DashPlayer] All radio streams fetched:', allRadio.length);
+            const catMap = {};
+            radioCatsApi.forEach(c => { catMap[String(c.category_id)] = c.category_name; });
+            allStreams = allRadio.map(s => ({ ...s, _category_name: catMap[String(s.category_id)] || 'Radio' }));
+          }
+          // Second try: fetch per category
+          if (allStreams.length === 0) {
+            for (const cat of radioCatsApi) {
+              const streams = await api.getRadioStreams(cat.category_id);
+              console.log(`[DashPlayer] Radio streams for ${cat.category_name}:`, streams?.length || 0);
+              if (streams && Array.isArray(streams)) {
+                streams.forEach(s => allStreams.push({ ...s, _category_name: cat.category_name }));
+              }
             }
           }
-          // If dedicated radio streams endpoint returned nothing, try getting them as live streams
+          // Third try: maybe radio streams are served via live streams endpoint with radio category IDs
           if (allStreams.length === 0) {
             for (const cat of radioCatsApi) {
               const streams = await api.getLiveStreams(cat.category_id);
+              console.log(`[DashPlayer] Live streams for radio cat ${cat.category_name}:`, streams?.length || 0);
               if (streams && Array.isArray(streams)) {
                 streams.forEach(s => allStreams.push({ ...s, _category_name: cat.category_name }));
               }
@@ -1677,6 +1690,7 @@ function RadioScreen({ onBack, api }) {
             setLoading(false);
             return;
           }
+          console.log('[DashPlayer] Radio categories found but no streams could be fetched');
         }
 
         // Method 2: Fallback - search live categories for radio-related names
@@ -3736,17 +3750,21 @@ export default function App() {
       // Count radio streams - try dedicated radio API first, then fallback to live category names
       let radioCount = 0;
       if (radioCatsApi && Array.isArray(radioCatsApi) && radioCatsApi.length > 0) {
-        // Dedicated radio endpoint available - count streams from all radio categories
-        let total = 0;
-        for (const cat of radioCatsApi) {
-          const streams = await api.getRadioStreams(cat.category_id);
-          if (streams && Array.isArray(streams)) total += streams.length;
-          else {
-            const liveStreams = await api.getLiveStreams(cat.category_id);
-            if (liveStreams && Array.isArray(liveStreams)) total += liveStreams.length;
+        // Dedicated radio endpoint - try fetching all radio streams at once first
+        const allRadio = await api.getRadioStreams();
+        if (allRadio && Array.isArray(allRadio) && allRadio.length > 0) {
+          radioCount = allRadio.length;
+        } else {
+          // Try per-category, then fallback to live streams with radio cat IDs
+          for (const cat of radioCatsApi) {
+            const streams = await api.getRadioStreams(cat.category_id);
+            if (streams && Array.isArray(streams)) { radioCount += streams.length; }
+            else {
+              const liveStreams = await api.getLiveStreams(cat.category_id);
+              if (liveStreams && Array.isArray(liveStreams)) radioCount += liveStreams.length;
+            }
           }
         }
-        radioCount = total;
       } else {
         // Fallback: check live categories for radio-related names
         const isRadioCat = (name) => {
