@@ -391,7 +391,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
     };
 
     const tryHls = () => {
-      if (!Hls.isSupported()) return tryDirect();
+      if (!Hls.isSupported()) return isLive ? tryMpegTs(baseUrl + '.ts') : tryDirect();
       if (!mountedRef.current) return;
       setCurrentFormat('HLS');
       const hlsUrl = baseUrl + '.m3u8';
@@ -411,12 +411,20 @@ function VideoPlayer({ url, onClose, title, inline }) {
       });
       let hlsErrorTriggered = false;
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal && !hlsErrorTriggered) { hlsErrorTriggered = true; cleanup(); tryDirect(); }
+        if (data.fatal && !hlsErrorTriggered) {
+          hlsErrorTriggered = true; cleanup();
+          if (isLive) tryMpegTs(baseUrl + '.ts');
+          else tryDirect();
+        }
       });
       retryTimerRef.current = setTimeout(() => {
         if (!mountedRef.current) return;
-        if (video.readyState < 2 && !hlsErrorTriggered) { hlsErrorTriggered = true; cleanup(); tryDirect(); }
-      }, 12000);
+        if (video.readyState < 2 && !hlsErrorTriggered) {
+          hlsErrorTriggered = true; cleanup();
+          if (isLive) tryMpegTs(baseUrl + '.ts');
+          else tryDirect();
+        }
+      }, 8000);
     };
 
     const tryDirect = () => {
@@ -434,7 +442,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
     };
 
     if (isLive) {
-      tryMpegTs(baseUrl + '.ts');
+      // Try HLS first (more compatible), then MPEG-TS, then direct
+      tryHls();
     } else {
       setCurrentFormat('Direct');
       video.src = url;
@@ -1899,23 +1908,27 @@ function SpeedTestScreen({ onBack }) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [ipInfo, setIpInfo] = useState(null);
-
-  // Fetch IP info on mount
-  useEffect(() => {
-    fetch('https://ipinfo.io/json?token=', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => setIpInfo(data))
-      .catch(() => {
-        // Fallback to ipapi
-        fetch('https://ipapi.co/json/', { cache: 'no-store' })
-          .then(r => r.json())
-          .then(data => setIpInfo({ ip: data.ip, hostname: data.org, city: data.city, region: data.region, country: data.country_name, org: data.org }))
-          .catch(() => {});
-      });
-  }, []);
+  const [ipLoading, setIpLoading] = useState(true);
 
   const vpnEnabled = localStorage.getItem('dash_vpn_enabled') === 'true';
   const vpnServer = localStorage.getItem('dash_vpn_server') || '';
+
+  // Fetch IP info on mount and when refreshed
+  const fetchIpInfo = useCallback(() => {
+    setIpLoading(true);
+    setIpInfo(null);
+    fetch('https://ipinfo.io/json?token=', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => { setIpInfo(data); setIpLoading(false); })
+      .catch(() => {
+        fetch('https://ipapi.co/json/', { cache: 'no-store' })
+          .then(r => r.json())
+          .then(data => { setIpInfo({ ip: data.ip, hostname: data.org, city: data.city, region: data.region, country: data.country_name, org: data.org }); setIpLoading(false); })
+          .catch(() => setIpLoading(false));
+      });
+  }, []);
+
+  useEffect(() => { fetchIpInfo(); }, []);
 
   const runSpeedTest = async () => {
     setTesting(true); setResults(null); setProgress(0); setError('');
@@ -2034,7 +2047,7 @@ function SpeedTestScreen({ onBack }) {
 
         {/* Connection Info */}
         <div className="speedtest-connection-info">
-          <div className="speedtest-info-row">
+          <div className="speedtest-info-row" style={{ borderBottom: '1px solid rgba(200,180,220,0.15)', paddingBottom: 10 }}>
             <span className="speedtest-info-label">VPN Status</span>
             <span className={`settings-badge ${vpnEnabled ? 'active' : 'inactive'}`}>
               {vpnEnabled ? 'ENABLED' : 'DISABLED'}
@@ -2047,10 +2060,10 @@ function SpeedTestScreen({ onBack }) {
             </div>
           )}
           <div className="speedtest-info-row">
-            <span className="speedtest-info-label">Your IP</span>
-            <span className="speedtest-info-value">{ipInfo ? ipInfo.ip : 'Loading...'}</span>
+            <span className="speedtest-info-label">{vpnEnabled ? 'VPN IP' : 'Your IP'}</span>
+            <span className="speedtest-info-value">{ipLoading ? 'Checking...' : ipInfo ? ipInfo.ip : 'Unknown'}</span>
           </div>
-          {ipInfo && ipInfo.hostname && (
+          {ipInfo && (ipInfo.hostname || ipInfo.org) && (
             <div className="speedtest-info-row">
               <span className="speedtest-info-label">Hostname / ISP</span>
               <span className="speedtest-info-value">{ipInfo.hostname || ipInfo.org || 'N/A'}</span>
@@ -2062,6 +2075,11 @@ function SpeedTestScreen({ onBack }) {
               <span className="speedtest-info-value">{[ipInfo.city, ipInfo.region, ipInfo.country].filter(Boolean).join(', ')}</span>
             </div>
           )}
+          <div style={{ textAlign: 'center', marginTop: 8 }}>
+            <button className="settings-btn settings-btn-secondary" style={{ fontSize: 12, padding: '6px 16px' }} onClick={fetchIpInfo}>
+              &#128260; Refresh IP Info
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -2641,36 +2659,48 @@ function EPGGridScreen({ onBack, api }) {
         const limited = streams.slice(0, 30);
         setChannels(limited);
         const epgMap = {};
-        // Deduplicate and sort EPG entries
+        // Deduplicate and sort EPG entries - aggressive dedup
         const processEpg = (listings) => {
           const mapped = listings.map((e, idx) => ({
             id: e.id || idx,
             title: e.title ? b64decode(e.title) : 'No Title',
             description: e.description ? b64decode(e.description) : '',
             start: e.start, end: e.end,
-          }));
+            startMs: new Date(e.start).getTime(),
+            endMs: new Date(e.end).getTime(),
+          })).filter(p => !isNaN(p.startMs) && !isNaN(p.endMs) && p.endMs > p.startMs);
           // Sort by start time
-          mapped.sort((a, b) => new Date(a.start) - new Date(b.start));
-          // Deduplicate: remove entries with same start time
+          mapped.sort((a, b) => a.startMs - b.startMs);
+          // Deduplicate: remove entries with same start time or same title+similar time
           const seen = new Set();
           const deduped = mapped.filter(p => {
-            const key = `${p.start}_${p.title}`;
+            // Key by start time rounded to nearest minute + title
+            const startMin = Math.floor(p.startMs / 60000);
+            const key = `${startMin}_${p.title}`;
             if (seen.has(key)) return false;
             seen.add(key);
             return true;
           });
-          // Remove overlapping: if a program starts before previous ends, skip it
+          // Remove overlapping: keep non-overlapping programs, prefer longer ones
           const clean = [];
           for (const p of deduped) {
             if (clean.length === 0) { clean.push(p); continue; }
             const prev = clean[clean.length - 1];
-            if (new Date(p.start) >= new Date(prev.end)) {
+            // No overlap - program starts at or after previous ends
+            if (p.startMs >= prev.endMs) {
               clean.push(p);
-            } else if (new Date(p.start).getTime() === new Date(prev.start).getTime()) {
-              // Same start, keep longer one
-              if (new Date(p.end) > new Date(prev.end)) clean[clean.length - 1] = p;
+            } else if (p.startMs === prev.startMs) {
+              // Same start - keep the longer program
+              if (p.endMs > prev.endMs) clean[clean.length - 1] = p;
+            } else if (p.startMs > prev.startMs && p.endMs > prev.endMs) {
+              // Partial overlap - trim previous to end at this one's start if gap is small
+              const overlap = prev.endMs - p.startMs;
+              if (overlap < 5 * 60000) { // Less than 5 min overlap, allow
+                clean.push(p);
+              }
+              // else skip (too much overlap)
             }
-            // else skip overlapping program
+            // else fully contained in previous - skip
           }
           return clean;
         };
