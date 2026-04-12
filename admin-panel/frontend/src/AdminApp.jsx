@@ -159,7 +159,7 @@ function DashboardPage() {
   const cards = [
     { label: 'Total Devices', value: stats.totalDevices ?? 0, icon: '\uD83D\uDCF1' },
     { label: 'Active Devices', value: stats.activeDevices ?? 0, icon: '\u2705' },
-    { label: 'Total Revenue', value: `$${(stats.totalRevenue ?? 0).toFixed(2)}`, icon: '\uD83D\uDCB0' },
+    { label: 'Total Revenue', value: `€${(stats.totalRevenue ?? 0).toFixed(2)}`, icon: '\uD83D\uDCB0' },
     { label: 'Active Subscriptions', value: stats.activeSubscriptions ?? 0, icon: '\uD83D\uDD11' },
   ];
 
@@ -198,7 +198,7 @@ function DashboardPage() {
                   <tr key={i}>
                     <td>{new Date(p.created_at || p.date).toLocaleDateString()}</td>
                     <td>{p.device_name || p.mac_address || '-'}</td>
-                    <td>${Number(p.amount || 0).toFixed(2)}</td>
+                    <td>€{Number(p.amount || 0).toFixed(2)}</td>
                     <td><span className={`badge badge-${p.status === 'completed' ? 'success' : p.status === 'pending' ? 'warning' : 'default'}`}>{p.status}</span></td>
                   </tr>
                 ))}
@@ -391,11 +391,13 @@ function DeviceFormModal({ device, onSave, onClose }) {
     playlist_url: device?.playlist_url || '',
     playlist_username: device?.playlist_username || '',
     playlist_password: device?.playlist_password || '',
+    default_language: device?.default_language || 'en',
   });
   const [saving, setSaving] = useState(false);
   const [changeMac, setChangeMac] = useState(false);
   const [newMac, setNewMac] = useState('');
   const [macMsg, setMacMsg] = useState('');
+  const [confirmHardReset, setConfirmHardReset] = useState(false);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -424,6 +426,17 @@ function DeviceFormModal({ device, onSave, onClose }) {
       setMacMsg('Device key reset to: ' + r.data.device_key);
     } catch (err) {
       setMacMsg(err.response?.data?.error || 'Failed to reset key');
+    }
+  };
+
+  const handleHardReset = async () => {
+    try {
+      await api.put(`/devices/${device.id}/hard-reset`);
+      setMacMsg('Hard reset complete. All playlists removed.');
+      setConfirmHardReset(false);
+    } catch (err) {
+      setMacMsg(err.response?.data?.error || 'Hard reset failed');
+      setConfirmHardReset(false);
     }
   };
 
@@ -476,6 +489,14 @@ function DeviceFormModal({ device, onSave, onClose }) {
             <label>Playlist Password</label>
             <input value={form.playlist_password} onChange={e => set('playlist_password', e.target.value)} placeholder="Password" />
           </div>
+          <div className="form-group">
+            <label>Default Language</label>
+            <select value={form.default_language} onChange={e => set('default_language', e.target.value)}>
+              <option value="en">English</option>
+              <option value="nl">Nederlands (Dutch)</option>
+              <option value="tr">Turkce (Turkish)</option>
+            </select>
+          </div>
         </div>
 
         {device && (
@@ -483,6 +504,14 @@ function DeviceFormModal({ device, onSave, onClose }) {
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:macMsg?8:0}}>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setChangeMac(!changeMac)}>Change MAC</button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={handleResetKey}>Reset Device Key</button>
+              {!confirmHardReset ? (
+                <button type="button" className="btn btn-sm btn-danger" onClick={() => setConfirmHardReset(true)}>Hard Reset</button>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={handleHardReset}>Confirm Reset</button>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirmHardReset(false)}>Cancel</button>
+                </>
+              )}
             </div>
             {changeMac && (
               <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
@@ -583,8 +612,8 @@ function PackagesPage() {
                   <td><strong>{p.name}</strong><br/><small className="text-muted">{p.description || ''}</small></td>
                   <td>{p.license_type}</td>
                   <td>{p.duration_days ? `${p.duration_days} days` : 'Unlimited'}</td>
-                  <td>${Number(p.price || 0).toFixed(2)}</td>
-                  <td>{p.currency || 'USD'}</td>
+                  <td>€{Number(p.price || 0).toFixed(2)}</td>
+                  <td>{p.currency || 'EUR'}</td>
                   <td><span className={`badge badge-${p.is_active ? 'success' : 'default'}`}>{p.is_active ? 'Yes' : 'No'}</span></td>
                   <td>
                     <div className="action-btns">
@@ -625,7 +654,7 @@ function PackageFormModal({ pkg, onSave, onClose }) {
     license_type: pkg?.license_type || 'yearly',
     duration_days: pkg?.duration_days || 365,
     price: pkg?.price || '',
-    currency: pkg?.currency || 'USD',
+    currency: pkg?.currency || 'EUR',
     stripe_price_id: pkg?.stripe_price_id || '',
     mollie_price_id: pkg?.mollie_price_id || '',
     is_active: pkg?.is_active !== undefined ? pkg.is_active : true,
@@ -763,7 +792,7 @@ function PaymentsPage() {
                   <td>{new Date(p.created_at || p.date).toLocaleDateString()}</td>
                   <td>{p.device_name || p.mac_address || '-'}</td>
                   <td>{p.package_name || '-'}</td>
-                  <td><strong>${Number(p.amount || 0).toFixed(2)}</strong> <small>{p.currency || ''}</small></td>
+                  <td><strong>€{Number(p.amount || 0).toFixed(2)}</strong> <small>{p.currency || ''}</small></td>
                   <td><span className="badge badge-default">{p.provider || '-'}</span></td>
                   <td><span className={`badge badge-${p.status === 'completed' ? 'success' : p.status === 'pending' ? 'warning' : p.status === 'failed' ? 'danger' : 'default'}`}>{p.status}</span></td>
                 </tr>

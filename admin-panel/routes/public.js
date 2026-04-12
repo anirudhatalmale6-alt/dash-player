@@ -11,7 +11,7 @@ router.post('/device/lookup', (req, res) => {
   const userAgent = req.headers['user-agent'] || '';
   const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '';
 
-  let device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
+  let device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at, default_language FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
 
   // Auto-register as trial device if not found
   if (!device) {
@@ -28,7 +28,7 @@ router.post('/device/lookup', (req, res) => {
       "INSERT INTO devices (mac_address, device_key, name, status, license_type, user_agent, last_ip) VALUES (?, ?, ?, ?, ?, ?, ?)"
     ).run(mac_address, device_key, '', 'active', 'trial', userAgent, clientIp);
 
-    device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at FROM devices WHERE id = ?').get(result.lastInsertRowid);
+    device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at, default_language FROM devices WHERE id = ?').get(result.lastInsertRowid);
   } else {
     // Update user_agent and last_ip for existing device
     db.prepare("UPDATE devices SET user_agent = ?, last_ip = ?, updated_at = datetime('now') WHERE id = ?").run(userAgent, clientIp, device.id);
@@ -59,12 +59,14 @@ router.post('/device/lookup', (req, res) => {
     device: {
       id: device.id,
       mac_address: device.mac_address,
+      device_key: device.device_key,
       name: device.name,
       status: device.status,
       license_type: device.license_type,
       license_valid: licenseValid,
       license_expires_at: device.license_expires_at,
       created_at: device.created_at,
+      default_language: device.default_language || 'en',
     },
     playlists,
   });

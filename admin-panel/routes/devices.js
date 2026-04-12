@@ -57,13 +57,14 @@ router.put('/:id', (req, res) => {
   const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
   if (!device) return res.status(404).json({ error: 'Device not found' });
 
-  const { name, status, license_type, license_expires_at, playlist_url, playlist_username, playlist_password } = req.body;
+  const { name, status, license_type, license_expires_at, playlist_url, playlist_username, playlist_password, default_language } = req.body;
   db.prepare(
-    'UPDATE devices SET name = ?, status = ?, license_type = ?, license_expires_at = ?, playlist_url = ?, playlist_username = ?, playlist_password = ?, updated_at = datetime(\'now\') WHERE id = ?'
+    "UPDATE devices SET name = ?, status = ?, license_type = ?, license_expires_at = ?, playlist_url = ?, playlist_username = ?, playlist_password = ?, default_language = ?, updated_at = datetime('now') WHERE id = ?"
   ).run(
     name ?? device.name, status ?? device.status, license_type ?? device.license_type,
     license_expires_at ?? device.license_expires_at, playlist_url ?? device.playlist_url,
     playlist_username ?? device.playlist_username, playlist_password ?? device.playlist_password,
+    default_language ?? device.default_language ?? 'en',
     req.params.id
   );
 
@@ -96,6 +97,24 @@ router.post('/:id/reset-key', (req, res) => {
 });
 
 // Hard reset device (remove playlists, reset PINs flag, reset mac_changes_used)
+// Supports both POST and PUT for flexibility
+router.put('/:id/hard-reset', (req, res) => {
+  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const hardReset = db.transaction(() => {
+    db.prepare('DELETE FROM playlists WHERE device_id = ?').run(req.params.id);
+    db.prepare(`UPDATE devices SET
+      playlist_url = '', playlist_username = '', playlist_password = '',
+      mac_changes_used = 0,
+      updated_at = datetime('now')
+      WHERE id = ?`).run(req.params.id);
+  });
+
+  hardReset();
+  res.json({ success: true, message: 'Device hard-reset complete. Playlists removed, MAC changes counter reset.' });
+});
+
 router.post('/:id/hard-reset', (req, res) => {
   const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
   if (!device) return res.status(404).json({ error: 'Device not found' });

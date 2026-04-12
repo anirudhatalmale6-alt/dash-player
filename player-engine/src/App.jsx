@@ -6,6 +6,102 @@ import Hls from 'hls.js';
 import { QRCodeSVG } from 'qrcode.react';
 import './styles.css';
 
+/* ── Translations ── */
+const TRANSLATIONS = {
+  en: {
+    greeting_morning: 'Good Morning',
+    greeting_afternoon: 'Good Afternoon',
+    greeting_evening: 'Good Evening',
+    what_to_watch: 'What would you like to watch today?',
+    live_tv: 'Live TV',
+    movies: 'Movies',
+    series: 'Series',
+    radio: 'Radio',
+    favorites: 'Favorites',
+    search: 'Search',
+    settings: 'Settings',
+    playlists: 'Playlists',
+    speed_test: 'Speed Test',
+    tv_guide: 'TV Guide',
+    multi_screen: 'Multi Screen',
+    catch_up: 'Catch Up',
+    channels: 'channels',
+    titles: 'titles',
+    shows: 'shows',
+    stations: 'stations',
+    live_channels: 'LIVE CHANNELS',
+    no_playlists: 'No Playlists Yet',
+    add_playlist: 'Add Playlist',
+    refresh: 'Refresh',
+    language: 'Language',
+  },
+  nl: {
+    greeting_morning: 'Goedemorgen',
+    greeting_afternoon: 'Goedemiddag',
+    greeting_evening: 'Goedenavond',
+    what_to_watch: 'Wat wil je vandaag kijken?',
+    live_tv: 'Live TV',
+    movies: 'Films',
+    series: 'Series',
+    radio: 'Radio',
+    favorites: 'Favorieten',
+    search: 'Zoeken',
+    settings: 'Instellingen',
+    playlists: 'Afspeellijsten',
+    speed_test: 'Snelheidstest',
+    tv_guide: 'TV Gids',
+    multi_screen: 'Multi Scherm',
+    catch_up: 'Terugkijken',
+    channels: 'kanalen',
+    titles: 'titels',
+    shows: 'shows',
+    stations: 'stations',
+    live_channels: 'LIVE KANALEN',
+    no_playlists: 'Nog geen afspeellijsten',
+    add_playlist: 'Afspeellijst toevoegen',
+    refresh: 'Vernieuwen',
+    language: 'Taal',
+  },
+  tr: {
+    greeting_morning: 'Gunaydin',
+    greeting_afternoon: 'Iyi gunler',
+    greeting_evening: 'Iyi aksamlar',
+    what_to_watch: 'Bugun ne izlemek istersiniz?',
+    live_tv: 'Canli TV',
+    movies: 'Filmler',
+    series: 'Diziler',
+    radio: 'Radyo',
+    favorites: 'Favoriler',
+    search: 'Ara',
+    settings: 'Ayarlar',
+    playlists: 'Oynatma Listeleri',
+    speed_test: 'Hiz Testi',
+    tv_guide: 'TV Rehberi',
+    multi_screen: 'Coklu Ekran',
+    catch_up: 'Tekrar Izle',
+    channels: 'kanal',
+    titles: 'baslik',
+    shows: 'dizi',
+    stations: 'istasyon',
+    live_channels: 'CANLI KANALLAR',
+    no_playlists: 'Henuz oynatma listesi yok',
+    add_playlist: 'Oynatma Listesi Ekle',
+    refresh: 'Yenile',
+    language: 'Dil',
+  }
+};
+
+function getCurrentLanguage() {
+  return localStorage.getItem('dash_language') || 'en';
+}
+function setCurrentLanguage(lang) {
+  localStorage.setItem('dash_language', lang);
+}
+function t(key) {
+  const lang = getCurrentLanguage();
+  return TRANSLATIONS[lang]?.[key] || TRANSLATIONS.en[key] || key;
+}
+
 /* ── Favorites helper (persisted in localStorage) ── */
 function getFavorites(type) {
   try { return JSON.parse(localStorage.getItem(`dash_fav_${type}`) || '[]'); } catch { return []; }
@@ -59,6 +155,48 @@ async function syncPlaylistsToBackend(playlists) {
 function getDefaultPlaylist() {
   const pls = getPlaylists();
   return pls.find(p => p.is_default) || pls[0] || null;
+}
+
+async function fetchPlaylistsFromBackend() {
+  try {
+    const device = getDeviceIdentity();
+    const apiBase = 'https://management.dashplayer.eu/api';
+    const res = await axios.post(`${apiBase}/device/lookup`, { mac_address: device.mac, device_key: device.key });
+    const backendPlaylists = res.data?.playlists || [];
+    if (backendPlaylists.length === 0) return getPlaylists();
+    const localPlaylists = getPlaylists();
+    // Merge: keep all local playlists, add backend ones that don't exist locally (matched by server_url+username)
+    const merged = [...localPlaylists];
+    for (const bp of backendPlaylists) {
+      const existsLocally = localPlaylists.find(lp => lp.server_url === bp.server_url && lp.username === bp.username);
+      if (!existsLocally) {
+        merged.push({
+          id: bp.id || Date.now() + Math.random(),
+          name: bp.name || 'My Playlist',
+          server_url: bp.server_url,
+          username: bp.username,
+          password: bp.password,
+          output_format: bp.output_format || 'm3u8',
+          is_default: bp.is_default === 1 || bp.is_default === true,
+          pin: bp.pin || '',
+        });
+      }
+    }
+    // If no default is set in local, try to pick from backend
+    if (merged.length > 0 && !merged.find(p => p.is_default)) {
+      const backendDefault = backendPlaylists.find(bp => bp.is_default === 1 || bp.is_default === true);
+      if (backendDefault) {
+        const idx = merged.findIndex(p => p.server_url === backendDefault.server_url && p.username === backendDefault.username);
+        if (idx >= 0) merged[idx].is_default = true;
+      } else {
+        merged[0].is_default = true;
+      }
+    }
+    localStorage.setItem('dash_playlists', JSON.stringify(merged));
+    return merged;
+  } catch (e) {
+    return getPlaylists();
+  }
 }
 
 /* ── Custom groups helper (persisted in localStorage) ── */
@@ -536,9 +674,9 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
   const formatDate = (d) => d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
   const greeting = () => {
     const h = time.getHours();
-    if (h < 12) return 'Good Morning';
-    if (h < 18) return 'Good Afternoon';
-    return 'Good Evening';
+    if (h < 12) return t('greeting_morning');
+    if (h < 18) return t('greeting_afternoon');
+    return t('greeting_evening');
   };
 
   return (
@@ -565,7 +703,7 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
         {/* Welcome */}
         <div className="home-welcome">
           <div className="home-welcome-text">{greeting()}</div>
-          <div className="home-welcome-sub">What would you like to watch today?</div>
+          <div className="home-welcome-sub">{t('what_to_watch')}</div>
         </div>
 
         {/* Quick Stats */}
@@ -596,23 +734,23 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
         <div className="home-cards-main">
           <div className="home-card home-card-live" onClick={() => onNavigate('live')}>
             <div className="home-card-icon">&#128250;</div>
-            <div className="home-card-label">Live TV</div>
-            <div className="home-card-count">{contentStats.live || 0} channels</div>
+            <div className="home-card-label">{t('live_tv')}</div>
+            <div className="home-card-count">{contentStats.live || 0} {t('channels')}</div>
           </div>
           <div className="home-card home-card-movies" onClick={() => onNavigate('vod')}>
             <div className="home-card-icon">&#127910;</div>
-            <div className="home-card-label">Movies</div>
-            <div className="home-card-count">{contentStats.vod || 0} titles</div>
+            <div className="home-card-label">{t('movies')}</div>
+            <div className="home-card-count">{contentStats.vod || 0} {t('titles')}</div>
           </div>
           <div className="home-card home-card-series" onClick={() => onNavigate('series')}>
             <div className="home-card-icon">&#127916;</div>
-            <div className="home-card-label">Series</div>
-            <div className="home-card-count">{contentStats.series || 0} shows</div>
+            <div className="home-card-label">{t('series')}</div>
+            <div className="home-card-count">{contentStats.series || 0} {t('shows')}</div>
           </div>
           <div className="home-card home-card-radio" onClick={() => onNavigate('radio')}>
             <div className="home-card-icon">&#127911;</div>
-            <div className="home-card-label">Radio</div>
-            <div className="home-card-count">24 stations</div>
+            <div className="home-card-label">{t('radio')}</div>
+            <div className="home-card-count">{contentStats.radio || 0} {t('stations')}</div>
           </div>
         </div>
 
@@ -620,31 +758,31 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
         <div className="home-cards-secondary">
           <div className="home-card-sm" onClick={() => onNavigate('catchup')}>
             <span className="home-card-sm-icon">&#9202;</span>
-            <span>Catch Up</span>
+            <span>{t('catch_up')}</span>
           </div>
           <div className="home-card-sm" onClick={() => onNavigate('favorites')}>
             <span className="home-card-sm-icon">&#9733;</span>
-            <span>Favorites</span>
+            <span>{t('favorites')}</span>
           </div>
           <div className="home-card-sm" onClick={() => onNavigate('epg')}>
             <span className="home-card-sm-icon">&#128203;</span>
-            <span>TV Guide</span>
+            <span>{t('tv_guide')}</span>
           </div>
           <div className="home-card-sm" onClick={() => onNavigate('multiscreen')}>
             <span className="home-card-sm-icon">&#9638;</span>
-            <span>Multi Screen</span>
+            <span>{t('multi_screen')}</span>
           </div>
           <div className="home-card-sm" onClick={() => onNavigate('playlists')}>
             <span className="home-card-sm-icon">&#128220;</span>
-            <span>Playlists</span>
+            <span>{t('playlists')}</span>
           </div>
           <div className="home-card-sm" onClick={() => onNavigate('speedtest')}>
             <span className="home-card-sm-icon">&#128246;</span>
-            <span>Speed Test</span>
+            <span>{t('speed_test')}</span>
           </div>
           <div className="home-card-sm" onClick={() => onNavigate('settings')}>
             <span className="home-card-sm-icon">&#9881;</span>
-            <span>Settings</span>
+            <span>{t('settings')}</span>
           </div>
         </div>
 
@@ -1184,13 +1322,13 @@ function MediaScreen({ type, onBack, api }) {
 }
 
 /* ══════ RADIO SCREEN ══════ */
-function RadioScreen({ onBack }) {
-  const radioCategories = [
+function RadioScreen({ onBack, api }) {
+  const staticRadioCategories = [
     { id: 'all', name: 'All Stations' }, { id: 'pop', name: 'Pop' }, { id: 'rock', name: 'Rock' },
     { id: 'jazz', name: 'Jazz' }, { id: 'classical', name: 'Classical' }, { id: 'hiphop', name: 'Hip Hop' },
     { id: 'electronic', name: 'Electronic' }, { id: 'country', name: 'Country' }, { id: 'news', name: 'News & Talk' },
   ];
-  const radioStations = [
+  const staticRadioStations = [
     { id: 1, name: 'BBC Radio 1', cat: 'pop', genre: 'Pop & Chart' },
     { id: 2, name: 'Capital FM', cat: 'pop', genre: 'Pop Hits' },
     { id: 3, name: 'Kiss FM', cat: 'pop', genre: 'Dance & Pop' },
@@ -1216,44 +1354,119 @@ function RadioScreen({ onBack }) {
     { id: 23, name: 'The Highway', cat: 'country', genre: 'New Country' },
     { id: 24, name: 'Willie\'s Roadhouse', cat: 'country', genre: 'Classic Country' },
   ];
+
   const [selectedCat, setSelectedCat] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [playing, setPlaying] = useState(null);
-  const filtered = radioStations.filter(s => {
-    const matchCat = selectedCat === 'all' || s.cat === selectedCat;
-    const matchSearch = !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
-  });
+  const [playingUrl, setPlayingUrl] = useState(null);
+  const [apiCategories, setApiCategories] = useState([]);
+  const [apiStations, setApiStations] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [usingApi, setUsingApi] = useState(false);
+
+  // Try to load radio streams from Xtream API (radio categories contain 'radio' in name)
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    const fetchRadio = async () => {
+      setLoading(true);
+      try {
+        const cats = await api.getLiveCategories();
+        if (!cats || !Array.isArray(cats)) { setLoading(false); return; }
+        // Find categories with 'radio' in the name (case-insensitive)
+        const radioCats = cats.filter(c => c.category_name && c.category_name.toLowerCase().includes('radio'));
+        if (radioCats.length === 0) { setLoading(false); return; }
+        // Fetch streams for all radio categories
+        const allStreams = [];
+        for (const cat of radioCats) {
+          const streams = await api.getLiveStreams(cat.category_id);
+          if (streams && Array.isArray(streams)) {
+            streams.forEach(s => allStreams.push({ ...s, _category_name: cat.category_name }));
+          }
+        }
+        if (!cancelled && allStreams.length > 0) {
+          setApiCategories([{ category_id: 'all', category_name: 'All Stations' }, ...radioCats]);
+          setApiStations(allStreams);
+          setSelectedCat('all');
+          setUsingApi(true);
+        }
+      } catch (e) { /* fallback to static */ }
+      if (!cancelled) setLoading(false);
+    };
+    fetchRadio();
+    return () => { cancelled = true; };
+  }, [api]);
+
+  // Display categories and stations
+  const displayCategories = usingApi ? apiCategories : staticRadioCategories;
+  const displayStations = usingApi ? apiStations : staticRadioStations;
+
+  const filtered = usingApi
+    ? displayStations.filter(s => {
+        const matchCat = selectedCat === 'all' || String(s.category_id) === String(selectedCat);
+        const matchSearch = !searchQuery || (s.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+        return matchCat && matchSearch;
+      })
+    : displayStations.filter(s => {
+        const matchCat = selectedCat === 'all' || s.cat === selectedCat;
+        const matchSearch = !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchCat && matchSearch;
+      });
+
+  const handlePlay = (station) => {
+    if (usingApi && api) {
+      const url = api.getLiveUrl(station.stream_id);
+      setPlaying(station);
+      setPlayingUrl(url);
+    } else {
+      setPlaying(station);
+      setPlayingUrl(null);
+    }
+  };
 
   return (
     <div className="section-screen">
       <div className="section-header">
         <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Radio</h1>
-        <div className="section-header-right"><span className="channel-count">{filtered.length} stations</span></div>
+        <h1 className="section-title">{t('radio')}</h1>
+        <div className="section-header-right"><span className="channel-count">{filtered.length} {t('stations')}</span></div>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
           <div className="sidebar-search"><input placeholder="Search stations..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
           <div className="sidebar-categories">
-            {radioCategories.map(cat => (
-              <div key={cat.id} className={`sidebar-cat-item ${selectedCat === cat.id ? 'active' : ''}`} onClick={() => setSelectedCat(cat.id)}>
-                <span>{cat.name}</span>
-                <span className="sidebar-cat-count">{cat.id === 'all' ? radioStations.length : radioStations.filter(s => s.cat === cat.id).length}</span>
-              </div>
-            ))}
+            {usingApi
+              ? apiCategories.map(cat => (
+                  <div key={cat.category_id} className={`sidebar-cat-item ${String(selectedCat) === String(cat.category_id) ? 'active' : ''}`} onClick={() => setSelectedCat(cat.category_id)}>
+                    <span>{cat.category_name}</span>
+                    <span className="sidebar-cat-count">{cat.category_id === 'all' ? apiStations.length : apiStations.filter(s => String(s.category_id) === String(cat.category_id)).length}</span>
+                  </div>
+                ))
+              : staticRadioCategories.map(cat => (
+                  <div key={cat.id} className={`sidebar-cat-item ${selectedCat === cat.id ? 'active' : ''}`} onClick={() => setSelectedCat(cat.id)}>
+                    <span>{cat.name}</span>
+                    <span className="sidebar-cat-count">{cat.id === 'all' ? staticRadioStations.length : staticRadioStations.filter(s => s.cat === cat.id).length}</span>
+                  </div>
+                ))
+            }
           </div>
         </div>
         <div className="radio-grid">
-          {filtered.map(station => (
-            <div key={station.id} className={`radio-card ${playing?.id === station.id ? 'playing' : ''}`} onClick={() => setPlaying(station)}>
-              <div className="radio-icon">&#127911;</div>
-              <div className="radio-info"><div className="radio-name">{station.name}</div><div className="radio-genre">{station.genre}</div></div>
-              {playing?.id === station.id && <div className="radio-playing-indicator"><span className="radio-bar"></span><span className="radio-bar"></span><span className="radio-bar"></span></div>}
+          {loading && <div className="loading-indicator" style={{ gridColumn: '1/-1' }}>Loading radio stations...</div>}
+          {!loading && filtered.map(station => (
+            <div key={station.stream_id || station.id} className={`radio-card ${playing?.stream_id === station.stream_id && playing?.id === station.id ? 'playing' : ''}`} onClick={() => handlePlay(station)}>
+              {station.stream_icon ? <img src={station.stream_icon} alt="" className="radio-icon" style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 8, background: '#1a1a2e' }} onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} /> : null}
+              <div className="radio-icon" style={station.stream_icon ? { display: 'none' } : {}}>&#127911;</div>
+              <div className="radio-info">
+                <div className="radio-name">{station.name}</div>
+                <div className="radio-genre">{station.genre || station._category_name || ''}</div>
+              </div>
+              {(playing?.stream_id === station.stream_id || playing?.id === station.id) && <div className="radio-playing-indicator"><span className="radio-bar"></span><span className="radio-bar"></span><span className="radio-bar"></span></div>}
             </div>
           ))}
         </div>
       </div>
+      {playingUrl && <VideoPlayer url={playingUrl} title={playing?.name || 'Radio'} onClose={() => { setPlayingUrl(null); setPlaying(null); }} />}
     </div>
   );
 }
@@ -1360,9 +1573,17 @@ function SettingsScreen({ onBack, api }) {
     setTimeout(() => setResetMsg(''), 5000);
   };
 
+  const [currentLang, setCurrentLang] = useState(() => getCurrentLanguage());
+
+  const handleLanguageChange = (lang) => {
+    setCurrentLanguage(lang);
+    setCurrentLang(lang);
+  };
+
   const tabs = [
     { id: 'account', label: 'Account', icon: '\u{1F464}' },
     { id: 'parental', label: 'Parental Control', icon: '\u{1F512}' },
+    { id: 'language', label: t('language'), icon: '\uD83C\uDF0D' },
     { id: 'vpn', label: 'VPN', icon: '\u{1F6E1}' },
     { id: 'device', label: 'Device Info', icon: '\u{1F4F1}' },
     { id: 'about', label: 'About', icon: '\u{2139}' },
@@ -1446,6 +1667,43 @@ function SettingsScreen({ onBack, api }) {
                   </div>
                 )}
                 {pinMsg && <p className={`settings-msg ${pinMsg.includes('successfully') ? 'success' : pinMsg.includes('disabled') ? 'info' : 'error'}`}>{pinMsg}</p>}
+              </div>
+            </div>
+          )}
+          {activeTab === 'language' && (
+            <div className="settings-panel">
+              <div className="settings-card">
+                <h3 className="settings-card-title">{t('language')}</h3>
+                <p className="settings-card-desc">Select the display language for the player interface.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+                  {[
+                    { code: 'en', label: 'English', native: 'English' },
+                    { code: 'nl', label: 'Dutch', native: 'Nederlands' },
+                    { code: 'tr', label: 'Turkish', native: 'Turkce' },
+                  ].map(lang => (
+                    <div
+                      key={lang.code}
+                      onClick={() => handleLanguageChange(lang.code)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 14,
+                        padding: '14px 18px', borderRadius: 10, cursor: 'pointer',
+                        background: currentLang === lang.code ? 'rgba(139,92,246,0.15)' : 'var(--card-bg)',
+                        border: currentLang === lang.code ? '2px solid #8b5cf6' : '2px solid var(--border)',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <span style={{ fontSize: 22 }}>{lang.code === 'en' ? '\uD83C\uDDEC\uD83C\uDDE7' : lang.code === 'nl' ? '\uD83C\uDDF3\uD83C\uDDF1' : '\uD83C\uDDF9\uD83C\uDDF7'}</span>
+                      <div>
+                        <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 15 }}>{lang.native}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-sub)' }}>{lang.label}</div>
+                      </div>
+                      {currentLang === lang.code && (
+                        <span style={{ marginLeft: 'auto', color: '#8b5cf6', fontSize: 18 }}>&#10003;</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>Language changes apply immediately to the home screen and main navigation.</p>
               </div>
             </div>
           )}
@@ -1615,6 +1873,13 @@ function SettingsScreen({ onBack, api }) {
 /* ══════ PLAYLISTS SCREEN ══════ */
 function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
   const [playlists, setPlaylists] = useState(() => getPlaylists());
+
+  // On mount, fetch and merge backend playlists
+  useEffect(() => {
+    fetchPlaylistsFromBackend().then(merged => {
+      if (merged) setPlaylists(merged);
+    });
+  }, []);
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
   const [name, setName] = useState('');
@@ -1755,8 +2020,11 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
       <div className="section-header">
         <button className="back-btn" onClick={onBack}>&#8592; Home</button>
         <h1 className="section-title">Playlists</h1>
-        <button className="settings-btn settings-btn-secondary" onClick={() => setPlaylists(getPlaylists())} style={{ marginLeft: 'auto' }}>
-          Refresh
+        <button className="settings-btn settings-btn-secondary" onClick={async () => {
+          const merged = await fetchPlaylistsFromBackend();
+          if (merged) setPlaylists(merged);
+        }} style={{ marginLeft: 'auto' }}>
+          {t('refresh')}
         </button>
         <button className="settings-btn settings-btn-primary" onClick={() => { resetForm(); setShowAdd(true); }} style={{ marginLeft: 8 }}>
           + Add Playlist
@@ -3053,21 +3321,22 @@ async function fetchPlayerLicense() {
     });
     const d = res.data?.device;
     if (!d) return null;
+    const defaultLang = d.default_language || 'en';
     // Check if device is blocked/banned
-    if (d.status === 'blocked' || d.is_banned) return { type: 'blocked', expiresAt: null, trialDaysLeft: 0 };
-    if (d.status === 'expired') return { type: 'expired', expiresAt: d.license_expires_at, trialDaysLeft: 0 };
+    if (d.status === 'blocked' || d.is_banned) return { type: 'blocked', expiresAt: null, trialDaysLeft: 0, default_language: defaultLang };
+    if (d.status === 'expired') return { type: 'expired', expiresAt: d.license_expires_at, trialDaysLeft: 0, default_language: defaultLang };
     const licType = d.license_type || 'trial';
-    if (licType === 'unlimited') return { type: 'unlimited', expiresAt: null, trialDaysLeft: 0 };
+    if (licType === 'unlimited') return { type: 'unlimited', expiresAt: null, trialDaysLeft: 0, default_language: defaultLang };
     if (licType === 'yearly') {
       const expires = d.license_expires_at ? new Date(d.license_expires_at) : null;
       const daysLeft = expires ? Math.ceil((expires - new Date()) / (1000*60*60*24)) : 365;
-      return { type: daysLeft > 0 ? 'yearly' : 'expired', expiresAt: d.license_expires_at, trialDaysLeft: 0 };
+      return { type: daysLeft > 0 ? 'yearly' : 'expired', expiresAt: d.license_expires_at, trialDaysLeft: 0, default_language: defaultLang };
     }
     // Trial
     const created = new Date(d.created_at);
     const daysSinceCreated = Math.floor((new Date() - created) / (1000*60*60*24));
     const trialDays = 7;
-    return { type: 'trial', expiresAt: null, trialDaysLeft: Math.max(0, trialDays - daysSinceCreated) };
+    return { type: 'trial', expiresAt: null, trialDaysLeft: Math.max(0, trialDays - daysSinceCreated), default_language: defaultLang };
   } catch (e) {
     return null;
   }
@@ -3095,7 +3364,7 @@ export default function App() {
   const [screen, setScreen] = useState('home');
   const [playerLicense, setPlayerLicense] = useState(() => getPlayerLicense());
   const [api, setApi] = useState(null);
-  const [contentStats, setContentStats] = useState({ live: 0, vod: 0, series: 0 });
+  const [contentStats, setContentStats] = useState({ live: 0, vod: 0, series: 0, radio: 0 });
 
   useEffect(() => {
     if (credentials && credentials.url && credentials.username && credentials.password) {
@@ -3107,11 +3376,23 @@ export default function App() {
   // Fetch license from backend and sync playlists
   useEffect(() => {
     fetchPlayerLicense().then(lic => {
-      if (lic) setPlayerLicense(lic);
+      if (lic) {
+        setPlayerLicense(lic);
+        // Apply default_language from backend if set
+        if (lic.default_language && !localStorage.getItem('dash_language')) {
+          setCurrentLanguage(lic.default_language);
+        }
+      }
     });
-    // Sync: push local playlists to backend
-    const localPls = getPlaylists();
-    if (localPls.length > 0) syncPlaylistsToBackend(localPls);
+    // Fetch + merge playlists from backend on startup
+    fetchPlaylistsFromBackend().then(merged => {
+      if (merged && merged.length > 0) {
+        const defaultPl = merged.find(p => p.is_default) || merged[0];
+        if (defaultPl) {
+          setCredentials(prev => prev || { url: defaultPl.server_url, username: defaultPl.username, password: defaultPl.password, output_format: defaultPl.output_format || 'm3u8' });
+        }
+      }
+    });
   }, []);
 
   // Re-apply VPN proxy on startup (Electron only)
@@ -3134,15 +3415,28 @@ export default function App() {
   useEffect(() => {
     if (!api) return;
     const fetchStats = async () => {
-      const [live, vod, series] = await Promise.all([
+      const [live, vod, series, liveCats] = await Promise.all([
         api.getLiveStreams(),
         api.getVodStreams(),
         api.getSeries(),
+        api.getLiveCategories(),
       ]);
+      // Count radio streams (live streams in categories named 'radio')
+      let radioCount = 0;
+      if (liveCats && Array.isArray(liveCats) && live && Array.isArray(live)) {
+        const radioCatIds = new Set(
+          liveCats.filter(c => c.category_name && c.category_name.toLowerCase().includes('radio'))
+            .map(c => String(c.category_id))
+        );
+        radioCount = radioCatIds.size > 0
+          ? live.filter(s => radioCatIds.has(String(s.category_id))).length
+          : 0;
+      }
       setContentStats({
         live: live && Array.isArray(live) ? live.length : 0,
         vod: vod && Array.isArray(vod) ? vod.length : 0,
         series: series && Array.isArray(series) ? series.length : 0,
+        radio: radioCount,
       });
     };
     fetchStats();
@@ -3165,7 +3459,7 @@ export default function App() {
   const handleSwitchPlaylist = (creds) => {
     // Force full reload by clearing state first
     setApi(null);
-    setContentStats({ live: 0, vod: 0, series: 0 });
+    setContentStats({ live: 0, vod: 0, series: 0, radio: 0 });
     setCredentials(creds);
     setScreen('home');
   };
@@ -3204,7 +3498,7 @@ export default function App() {
     case 'series':
       return <MediaScreen type="series" onBack={() => setScreen('home')} api={api} />;
     case 'radio':
-      return <RadioScreen onBack={() => setScreen('home')} />;
+      return <RadioScreen onBack={() => setScreen('home')} api={api} />;
     case 'settings':
       return <SettingsScreen onBack={() => setScreen('home')} api={api} />;
     case 'favorites':

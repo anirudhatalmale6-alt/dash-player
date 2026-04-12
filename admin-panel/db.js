@@ -107,6 +107,8 @@ try { db.exec('ALTER TABLE devices ADD COLUMN is_banned INTEGER DEFAULT 0'); } c
 try { db.exec("ALTER TABLE playlists ADD COLUMN output_format TEXT DEFAULT 'm3u8'"); } catch (e) { /* column exists */ }
 try { db.exec("ALTER TABLE devices ADD COLUMN user_agent TEXT DEFAULT ''"); } catch (e) { /* column exists */ }
 try { db.exec("ALTER TABLE devices ADD COLUMN last_ip TEXT DEFAULT ''"); } catch (e) { /* column exists */ }
+try { db.exec("ALTER TABLE devices ADD COLUMN default_language TEXT DEFAULT 'en'"); } catch (e) { /* column exists */ }
+try { db.exec("ALTER TABLE playlists ADD COLUMN pin TEXT DEFAULT ''"); } catch (e) { /* column exists */ }
 
 // Create ticket-related tables
 db.exec(`
