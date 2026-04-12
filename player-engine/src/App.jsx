@@ -2738,7 +2738,7 @@ function MultiScreenScreen({ onBack, api }) {
 
         {/* Channel Picker Overlay */}
         {showPicker && (
-          <div style={{position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 10, display: 'flex', flexDirection: 'column', padding: 20, animation: 'fadeIn 0.2s'}}>
+          <div style={{position: 'absolute', inset: 0, background: 'rgba(248,244,248,0.97)', backdropFilter: 'blur(8px)', zIndex: 10, display: 'flex', flexDirection: 'column', padding: 20, animation: 'fadeIn 0.2s'}}>
             <div style={{display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16}}>
               <button className="back-btn" onClick={() => setShowPicker(false)}>&#10005; Close</button>
               <h2 style={{fontSize: 16, fontWeight: 700, color: 'var(--text)'}}>Select Channel for Screen {activeCell + 1}</h2>
