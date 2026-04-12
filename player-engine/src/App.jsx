@@ -1751,46 +1751,72 @@ function RadioScreen({ onBack, api }) {
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
     };
   }, []);
 
-  const handlePlay = async (station) => {
+  const handlePlay = (station) => {
     if (!api) return;
     // Stop previous audio
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
     setPlaying(station);
     setRadioLoading(true);
     setRadioError(null);
     setPlayingUrl(null);
 
-    // Try radio-specific URLs first (mp3), then fallback to live URL
+    // Try radio-specific URLs (mp3 via /radio/ path, then /live/ path)
     const urls = api.getRadioUrls(station.stream_id);
-    const audio = new Audio();
-    audioRef.current = audio;
     let tried = 0;
+    let settled = false;
 
-    const tryNext = () => {
+    const tryUrl = () => {
+      if (settled) return;
       if (tried >= urls.length) {
-        // All radio URLs failed, fall back to VideoPlayer with live URL
+        settled = true;
         setRadioLoading(false);
-        const liveUrl = api.getLiveUrl(station.stream_id);
-        setPlayingUrl(liveUrl);
+        setRadioError('Stream unavailable');
         return;
       }
       const url = urls[tried++];
       console.log(`[DashPlayer] Trying radio URL ${tried}/${urls.length}: ${url}`);
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audioRef.current = audio;
+
+      const onSuccess = () => {
+        if (settled) return;
+        settled = true;
+        setRadioLoading(false);
+        setRadioError(null);
+      };
+
+      const onFail = () => {
+        if (settled) return;
+        audio.pause();
+        audio.src = '';
+        tryUrl();
+      };
+
+      audio.addEventListener('canplay', () => {
+        onSuccess();
+        audio.play().catch(() => {});
+      }, { once: true });
+
+      audio.addEventListener('playing', () => { onSuccess(); }, { once: true });
+
+      audio.addEventListener('error', () => { onFail(); }, { once: true });
+
+      // Timeout: if no canplay/error after 8 seconds, try next
+      setTimeout(() => { if (!settled && audio === audioRef.current && audio.readyState < 2) onFail(); }, 8000);
+
       audio.src = url;
-      audio.oncanplay = () => { setRadioLoading(false); setRadioError(null); };
-      audio.onplaying = () => { setRadioLoading(false); setRadioError(null); };
-      audio.onerror = () => { tryNext(); };
-      audio.play().catch(() => { tryNext(); });
+      audio.load();
     };
-    tryNext();
+    tryUrl();
   };
 
   const handleStop = () => {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
     setPlaying(null);
     setPlayingUrl(null);
     setRadioLoading(false);
@@ -1852,8 +1878,7 @@ function RadioScreen({ onBack, api }) {
           </div>
         </div>
       )}
-      {/* Fallback to VideoPlayer for non-mp3 radio streams */}
-      {playingUrl && <VideoPlayer url={playingUrl} title={playing?.name || 'Radio'} onClose={() => { handleStop(); }} />}
+      {/* No VideoPlayer fallback for radio - all radio uses HTML5 audio */}
     </div>
   );
 }
