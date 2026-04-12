@@ -2506,8 +2506,10 @@ function EPGGridScreen({ onBack, api }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [epgByChannel, setEpgByChannel] = useState({});
-  const [selectedDate, setSelectedDate] = useState(0); // 0 = today, -1 = yesterday, 1 = tomorrow
-  const scrollRef = useRef(null);
+  const [selectedDate, setSelectedDate] = useState(0);
+  const programsScrollRef = useRef(null);
+  const timelineScrollRef = useRef(null);
+  const channelsScrollRef = useRef(null);
 
   useEffect(() => {
     if (!api) return;
@@ -2528,47 +2530,75 @@ function EPGGridScreen({ onBack, api }) {
   useEffect(() => {
     if (!selectedCategory || !api) return;
     let cancelled = false;
-    const fetch = async () => {
+    const fetchData = async () => {
       setLoading(true);
       const streams = await api.getLiveStreams(selectedCategory);
       if (!cancelled && streams && Array.isArray(streams)) {
-        const limited = streams.slice(0, 30); // limit to 30 for performance
+        const limited = streams.slice(0, 30);
         setChannels(limited);
-        // Fetch EPG for each channel
         const epgMap = {};
-        await Promise.all(limited.map(async (ch) => {
-          const data = await api.getEPG(ch.stream_id);
-          if (data && data.epg_listings) {
-            epgMap[ch.stream_id] = data.epg_listings.map((e, i) => ({
-              id: e.id || i,
-              title: e.title ? b64decode(e.title) : '',
-              start: e.start, end: e.end,
-            }));
+        // Fetch EPG in batches of 5 for performance
+        for (let i = 0; i < limited.length; i += 5) {
+          const batch = limited.slice(i, i + 5);
+          await Promise.all(batch.map(async (ch) => {
+            try {
+              // Try full EPG first, fall back to short EPG
+              let data = await api.getFullEPG(ch.stream_id);
+              if (data && data.epg_listings && data.epg_listings.length > 0) {
+                epgMap[ch.stream_id] = data.epg_listings.map((e, idx) => ({
+                  id: e.id || idx,
+                  title: e.title ? b64decode(e.title) : 'No Title',
+                  description: e.description ? b64decode(e.description) : '',
+                  start: e.start, end: e.end,
+                }));
+              } else {
+                data = await api.getEPG(ch.stream_id);
+                if (data && data.epg_listings && data.epg_listings.length > 0) {
+                  epgMap[ch.stream_id] = data.epg_listings.map((e, idx) => ({
+                    id: e.id || idx,
+                    title: e.title ? b64decode(e.title) : 'No Title',
+                    description: e.description ? b64decode(e.description) : '',
+                    start: e.start, end: e.end,
+                  }));
+                }
+              }
+            } catch (err) { /* skip channel */ }
+          }));
+          if (!cancelled && i + 5 < limited.length) {
+            setEpgByChannel({ ...epgMap });
           }
-        }));
-        if (!cancelled) setEpgByChannel(epgMap);
+        }
+        if (!cancelled) setEpgByChannel({ ...epgMap });
       }
       if (!cancelled) setLoading(false);
     };
-    fetch();
+    fetchData();
     return () => { cancelled = true; };
   }, [selectedCategory, api]);
 
-  // Generate hours for the timeline (24h)
+  // Timeline setup
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const today = new Date();
   today.setDate(today.getDate() + selectedDate);
   const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
   const now = new Date();
-  const pixelsPerMinute = 3; // 180px per hour
-  const nowOffset = ((now - dayStart) / 60000) * pixelsPerMinute;
+  const pixelsPerMinute = 3;
+  const nowOffset = selectedDate === 0 ? ((now - dayStart) / 60000) * pixelsPerMinute : 0;
+  const totalWidth = 24 * 180;
 
   const getProgramStyle = (prog) => {
     const start = new Date(prog.start);
     const end = new Date(prog.end);
+    const progDayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0);
+    // Use the selected day's start for positioning
     const left = Math.max(0, ((start - dayStart) / 60000) * pixelsPerMinute);
-    const width = Math.max(2, ((end - start) / 60000) * pixelsPerMinute);
-    return { left: `${left}px`, width: `${width}px` };
+    const width = Math.max(20, ((end - start) / 60000) * pixelsPerMinute);
+    // Only show programs that overlap with this day
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    if (end <= dayStart || start >= dayEnd) return null;
+    const clampedLeft = Math.max(0, left);
+    const clampedWidth = Math.min(totalWidth - clampedLeft, width);
+    return { left: `${clampedLeft}px`, width: `${clampedWidth}px` };
   };
 
   const isCurrentProgram = (p) => {
@@ -2582,13 +2612,46 @@ function EPGGridScreen({ onBack, api }) {
     { offset: 1, label: 'Tomorrow' },
   ];
 
-  // Scroll to current time on mount
+  // Sync scroll between timeline, channels, and program rows
+  const handleProgramsScroll = () => {
+    if (programsScrollRef.current) {
+      if (timelineScrollRef.current) timelineScrollRef.current.scrollLeft = programsScrollRef.current.scrollLeft;
+      if (channelsScrollRef.current) channelsScrollRef.current.scrollTop = programsScrollRef.current.scrollTop;
+    }
+  };
+
+  // Scroll to current time on load
   useEffect(() => {
-    if (scrollRef.current && selectedDate === 0) {
-      const scrollTo = Math.max(0, nowOffset - 300);
-      scrollRef.current.scrollLeft = scrollTo;
+    if (!loading && programsScrollRef.current && selectedDate === 0) {
+      const scrollTo = Math.max(0, nowOffset - 200);
+      programsScrollRef.current.scrollLeft = scrollTo;
+      if (timelineScrollRef.current) timelineScrollRef.current.scrollLeft = scrollTo;
     }
   }, [loading, selectedDate]);
+
+  // Get now/next for a channel
+  const getNowNext = (streamId) => {
+    const progs = epgByChannel[streamId] || [];
+    const n = new Date();
+    const nowProg = progs.find(p => new Date(p.start) <= n && new Date(p.end) > n);
+    let nextProg = null;
+    if (nowProg) {
+      const nowEnd = new Date(nowProg.end);
+      nextProg = progs.find(p => new Date(p.start) >= nowEnd);
+    } else {
+      nextProg = progs.find(p => new Date(p.start) > n);
+    }
+    // Progress percentage for current program
+    let progress = 0;
+    if (nowProg) {
+      const s = new Date(nowProg.start).getTime();
+      const e = new Date(nowProg.end).getTime();
+      progress = Math.min(100, Math.max(0, ((n.getTime() - s) / (e - s)) * 100));
+    }
+    return { nowProg, nextProg, progress };
+  };
+
+  const fmt = (d) => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
     <div className="section-screen">
@@ -2607,8 +2670,8 @@ function EPGGridScreen({ onBack, api }) {
             ))}
           </div>
         </div>
-        <div className="epg-grid-container" ref={scrollRef}>
-          {/* Date Navigation */}
+        <div className="epg-main-area">
+          {/* Date Navigation - sticky top */}
           <div className="epg-grid-header">
             <div className="epg-grid-date-nav">
               {dateLabels.map(d => (
@@ -2621,43 +2684,75 @@ function EPGGridScreen({ onBack, api }) {
           {loading && <div className="loading-indicator">Loading TV Guide...</div>}
 
           {!loading && (
-            <>
-              {/* Timeline */}
-              <div className="epg-timeline-row">
-                <div className="epg-timeline-spacer" />
-                <div className="epg-timeline-hours">
-                  {hours.map(h => (
-                    <div key={h} className="epg-timeline-hour">{String(h).padStart(2, '0')}:00</div>
-                  ))}
+            <div className="epg-split-layout">
+              {/* Fixed channel column */}
+              <div className="epg-channels-col" ref={channelsScrollRef}>
+                <div className="epg-channels-header">Channel</div>
+                {channels.map(ch => {
+                  const { nowProg, progress } = selectedDate === 0 ? getNowNext(ch.stream_id) : { nowProg: null, progress: 0 };
+                  return (
+                    <div key={ch.stream_id} className="epg-channel-cell">
+                      {ch.stream_icon && <img className="epg-grid-channel-icon" src={ch.stream_icon} alt="" onError={e => e.target.style.display='none'} />}
+                      <div className="epg-channel-info">
+                        <span className="epg-grid-channel-name">{ch.name}</span>
+                        {selectedDate === 0 && nowProg && (
+                          <div className="epg-channel-now-label">
+                            <div className="epg-now-progress-bar">
+                              <div className="epg-now-progress-fill" style={{ width: `${progress}%` }} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Scrollable programs area */}
+              <div className="epg-programs-area">
+                {/* Timeline header - synced scroll */}
+                <div className="epg-timeline-strip" ref={timelineScrollRef}>
+                  <div className="epg-timeline-inner" style={{ width: `${totalWidth}px`, position: 'relative' }}>
+                    {hours.map(h => (
+                      <div key={h} className="epg-timeline-hour" style={{ left: `${h * 180}px` }}>
+                        {String(h).padStart(2, '0')}:00
+                      </div>
+                    ))}
+                    {selectedDate === 0 && <div className="epg-timeline-now-marker" style={{ left: `${nowOffset}px` }} />}
+                  </div>
+                </div>
+
+                {/* Program rows - scrollable */}
+                <div className="epg-programs-scroll" ref={programsScrollRef} onScroll={handleProgramsScroll}>
+                  <div className="epg-programs-inner" style={{ width: `${totalWidth}px`, position: 'relative' }}>
+                    {/* Now line */}
+                    {selectedDate === 0 && <div className="epg-now-line" style={{ left: `${nowOffset}px` }} />}
+
+                    {channels.map(ch => {
+                      const progs = (epgByChannel[ch.stream_id] || []);
+                      return (
+                        <div key={ch.stream_id} className="epg-program-row">
+                          {progs.map(prog => {
+                            const style = getProgramStyle(prog);
+                            if (!style) return null;
+                            return (
+                              <div key={prog.id} className={`epg-grid-program ${isCurrentProgram(prog) ? 'current' : ''}`}
+                                style={style} title={`${prog.title}\n${fmt(prog.start)} - ${fmt(prog.end)}`}>
+                                <div className="epg-grid-program-title">{prog.title}</div>
+                                <div className="epg-grid-program-time">{fmt(prog.start)} - {fmt(prog.end)}</div>
+                              </div>
+                            );
+                          })}
+                          {progs.length === 0 && (
+                            <div className="epg-no-data">No EPG data available</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-
-              {/* Channel Rows */}
-              <div className="epg-grid-body" style={{ position: 'relative' }}>
-                {/* Now line */}
-                {selectedDate === 0 && <div className="epg-now-line" style={{ left: `${200 + nowOffset}px` }} />}
-
-                {channels.map(ch => (
-                  <div key={ch.stream_id} className="epg-grid-row">
-                    <div className="epg-grid-channel">
-                      {ch.stream_icon && <img className="epg-grid-channel-icon" src={ch.stream_icon} alt="" onError={e => e.target.style.display='none'} />}
-                      <span className="epg-grid-channel-name">{ch.name}</span>
-                    </div>
-                    <div className="epg-grid-programs" style={{ width: `${24 * 180}px`, position: 'relative' }}>
-                      {(epgByChannel[ch.stream_id] || []).map(prog => (
-                        <div key={prog.id} className={`epg-grid-program ${isCurrentProgram(prog) ? 'current' : ''}`}
-                          style={getProgramStyle(prog)} title={prog.title}>
-                          <div className="epg-grid-program-title">{prog.title}</div>
-                          <div className="epg-grid-program-time">
-                            {new Date(prog.start).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} - {new Date(prog.end).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
+            </div>
           )}
         </div>
       </div>
