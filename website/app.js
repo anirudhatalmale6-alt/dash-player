@@ -3,7 +3,7 @@
    API Base: https://management.dashplayer.eu/api
    ============================================ */
 
-const API_BASE = 'https://management.dashplayer.eu/api';
+const API_BASE = '/api';
 
 // ---- State ----
 let currentPlaylistMac = '';
