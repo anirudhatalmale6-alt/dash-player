@@ -1045,25 +1045,37 @@ function VideoPlayer({ url, onClose, title, inline }) {
       try {
         const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack: 0 });
         if (!result.success || !result.url) { console.log('[DashPlayer] FFmpeg URL failed'); nextStep(); return; }
+        console.log('[DashPlayer] FFmpeg local URL:', result.url);
         setUsingFfmpeg(true);
+        // Stop any previous mpegts/hls players before setting new src
+        cleanup();
         video.src = result.url;
-        video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
-        video.addEventListener('playing', () => { playbackStarted = true; onPlaying(); }, { once: true });
+        video.load();
+        video.addEventListener('loadeddata', () => {
+          console.log('[DashPlayer] FFmpeg loadeddata, readyState:', video.readyState);
+          playbackStarted = true;
+          onPlaying();
+        }, { once: true });
+        video.addEventListener('canplay', () => {
+          console.log('[DashPlayer] FFmpeg canplay');
+          playbackStarted = true;
+          onPlaying();
+        }, { once: true });
         video.addEventListener('error', (e) => {
-          console.log('[DashPlayer] FFmpeg playback error:', e);
+          console.log('[DashPlayer] FFmpeg playback error:', video.error?.message || e);
           if (!mountedRef.current || playbackStarted) return;
           setUsingFfmpeg(false);
           nextStep();
         }, { once: true });
-        video.play().catch(() => {});
+        setTimeout(() => { if (video) video.play().catch(() => {}); }, 500);
         retryTimerRef.current = setTimeout(() => {
           if (!mountedRef.current || playbackStarted) return;
+          console.log('[DashPlayer] FFmpeg timeout, readyState:', video.readyState, 'networkState:', video.networkState);
           if (video.readyState < 2) {
-            console.log('[DashPlayer] FFmpeg timeout');
             setUsingFfmpeg(false);
             nextStep();
           }
-        }, 8000); // longer timeout for FFmpeg startup
+        }, 12000); // longer timeout - FFmpeg needs time to connect and start transcoding
       } catch (e) {
         console.log('[DashPlayer] FFmpeg error:', e);
         setUsingFfmpeg(false);

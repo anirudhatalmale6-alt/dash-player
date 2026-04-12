@@ -28,7 +28,8 @@ function findBinary(name) {
   }
   // Check system PATH
   const candidates = process.platform === 'win32'
-    ? [`${name}.exe`, `C:\\ffmpeg\\bin\\${name}.exe`, `C:\\Program Files\\ffmpeg\\bin\\${name}.exe`]
+    ? [`${name}.exe`, `C:\\ffmpeg\\bin\\${name}.exe`, `C:\\ffmpeg\\${name}.exe`,
+       `C:\\Program Files\\ffmpeg\\bin\\${name}.exe`, `C:\\Program Files (x86)\\ffmpeg\\bin\\${name}.exe`]
     : [name, `/usr/bin/${name}`, `/usr/local/bin/${name}`];
   for (const c of candidates) {
     try {
@@ -93,13 +94,6 @@ function ensureLocalServer() {
       const args = [
         '-hide_banner', '-loglevel', 'warning',
         '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-      ];
-
-      if (isLive) {
-        args.push('-re'); // real-time for live streams
-      }
-
-      args.push(
         '-i', sourceUrl,
         '-map', '0:v:0',
         '-map', `0:a:${audioTrack}`,
@@ -107,15 +101,16 @@ function ensureLocalServer() {
         '-c:a', 'aac',      // transcode audio to AAC (browser-compatible)
         '-b:a', '192k',
         '-ac', '2',
-        '-f', 'mpegts',     // output MPEG-TS (works with MSE)
+        '-f', 'mp4',        // fragmented MP4 - Chrome can play this directly
+        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1',
-      );
+      ];
 
       res.writeHead(200, {
-        'Content-Type': 'video/mp2t',
+        'Content-Type': 'video/mp4',
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'no-cache',
-        'Transfer-Encoding': 'chunked',
+        'Connection': 'keep-alive',
       });
 
       ffmpegProcess = spawn(ffmpegPath, args, {
