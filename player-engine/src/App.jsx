@@ -963,8 +963,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
     };
 
     if (isLive) {
-      // Try HLS first (more compatible), then MPEG-TS, then direct
-      tryHls();
+      // Try MPEG-TS first (better for IPTV), then HLS, then direct
+      tryMpegTs(url.replace(/\.\w+$/, '.ts'));
     } else {
       setCurrentFormat('Direct');
       video.src = url;
@@ -1751,8 +1751,66 @@ function MediaScreen({ type, onBack, api }) {
           )}
         </div>
       </div>
-      {playingItem && api && (
-        <VideoPlayer url={playingItem.isSeries ? api.getSeriesUrl(playingItem.stream_id, playingItem.container_extension || 'mp4') : api.getVodUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')} title={playingItem.name || playingItem.title} onClose={() => setPlayingItem(null)} />
+      {/* VOD Live TV-style player */}
+      {playingItem && api && isVod && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            <button className="back-btn" onClick={() => setPlayingItem(null)}>&#8592; {t('back')}</button>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{playingItem.name || playingItem.title}</h2>
+          </div>
+          <div className="live-player-area" style={{ flex: 1 }}>
+            <div className="live-player-main">
+              <div className="live-player-top">
+                <div className="live-player-info">
+                  <span className="live-player-channel-name">{playingItem.name || playingItem.title}</span>
+                </div>
+                <div className="live-player-actions">
+                  <button className="back-btn" onClick={() => setPlayingItem(null)}>&#9632; Stop</button>
+                </div>
+              </div>
+              <div className="live-player-video">
+                <VideoPlayer
+                  key={playingItem.stream_id}
+                  url={api.getVodUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')}
+                  title={playingItem.name || playingItem.title}
+                  onClose={() => setPlayingItem(null)}
+                  inline={true}
+                />
+              </div>
+            </div>
+            {/* Movies list on right side */}
+            <div className="live-player-channels" style={{ overflowY: 'auto' }}>
+              <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{filtered.length} {t('titles')}</span>
+                {totalPages > 1 && (
+                  <span>
+                    <button className="ep-page-btn" disabled={currentPage === 0} onClick={() => goToPage(currentPage - 1)} style={{ fontSize: 10, padding: '1px 6px' }}>&#8592;</button>
+                    <span style={{ margin: '0 4px' }}>{currentPage + 1}/{totalPages}</span>
+                    <button className="ep-page-btn" disabled={currentPage >= totalPages - 1} onClick={() => goToPage(currentPage + 1)} style={{ fontSize: 10, padding: '1px 6px' }}>&#8594;</button>
+                  </span>
+                )}
+              </div>
+              {visibleItems.map(item => {
+                const posterUrl = item.stream_icon || item.cover || '';
+                const itemName = item.name || item.title || '?';
+                return (
+                  <div key={item.stream_id} className={`ch-item ${playingItem?.stream_id === item.stream_id ? 'active' : ''}`}
+                    onClick={() => { setPlayingItem(item); addToHistory({ id: `vod_${item.stream_id}`, name: item.name, type: 'vod', streamId: item.stream_id, icon: posterUrl }); }}>
+                    {posterUrl ? <img className="ch-icon-img" src={posterUrl} alt="" style={{ width: 28, height: 38, objectFit: 'cover', borderRadius: 3 }} onError={e => { e.target.style.display = 'none'; }} /> : <span style={{ fontSize: 14 }}>{'\u{1F3AC}'}</span>}
+                    <div className="ch-info" style={{ minWidth: 0 }}>
+                      <div className="ch-name" style={{ fontSize: 11 }}>{itemName}</div>
+                      {item.rating && item.rating !== '0' && <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>&#9733; {item.rating}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Series episode popup fallback (for non-inline series) */}
+      {playingItem && api && playingItem.isSeries && (
+        <VideoPlayer url={api.getSeriesUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')} title={playingItem.name || playingItem.title} onClose={() => setPlayingItem(null)} />
       )}
     </div>
   );
