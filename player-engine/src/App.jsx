@@ -1634,19 +1634,25 @@ function RadioScreen({ onBack, api }) {
   const [loading, setLoading] = useState(false);
   const [usingApi, setUsingApi] = useState(false);
 
-  // Try to load radio streams from Xtream API (radio categories contain 'radio' in name)
+  // Try to load radio streams from Xtream API
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
+    const isRadioCategory = (name) => {
+      if (!name) return false;
+      const n = name.toLowerCase();
+      const keywords = ['radio', 'radyo', 'fm ', ' fm', 'muziek', 'musik', 'music', 'müzik'];
+      return keywords.some(k => n.includes(k)) || /\bfm\b/i.test(name) || /\bam\b/i.test(name);
+    };
     const fetchRadio = async () => {
       setLoading(true);
       try {
         const cats = await api.getLiveCategories();
         if (!cats || !Array.isArray(cats)) { setLoading(false); return; }
-        // Find categories with 'radio' in the name (case-insensitive)
-        const radioCats = cats.filter(c => c.category_name && c.category_name.toLowerCase().includes('radio'));
+        console.log('[DashPlayer] All live categories:', cats.map(c => `${c.category_id}:${c.category_name}`).join(', '));
+        const radioCats = cats.filter(c => isRadioCategory(c.category_name));
+        console.log('[DashPlayer] Radio categories found:', radioCats.map(c => c.category_name));
         if (radioCats.length === 0) { setLoading(false); return; }
-        // Fetch streams for all radio categories
         const allStreams = [];
         for (const cat of radioCats) {
           const streams = await api.getLiveStreams(cat.category_id);
@@ -1655,12 +1661,12 @@ function RadioScreen({ onBack, api }) {
           }
         }
         if (!cancelled && allStreams.length > 0) {
-          setApiCategories([{ category_id: 'all', category_name: 'All Stations' }, ...radioCats]);
+          setApiCategories([{ category_id: 'all', category_name: t('all_stations') || 'All Stations' }, ...radioCats]);
           setApiStations(allStreams);
           setSelectedCat('all');
           setUsingApi(true);
         }
-      } catch (e) { /* fallback to static */ }
+      } catch (e) { console.warn('[DashPlayer] Radio fetch error:', e); }
       if (!cancelled) setLoading(false);
     };
     fetchRadio();
@@ -3693,11 +3699,17 @@ export default function App() {
         api.getSeries(),
         api.getLiveCategories(),
       ]);
-      // Count radio streams (live streams in categories named 'radio')
+      // Count radio streams (live streams in radio-related categories)
       let radioCount = 0;
+      const isRadioCat = (name) => {
+        if (!name) return false;
+        const n = name.toLowerCase();
+        const keywords = ['radio', 'radyo', 'fm ', ' fm', 'muziek', 'musik', 'music', 'müzik'];
+        return keywords.some(k => n.includes(k)) || /\bfm\b/i.test(name) || /\bam\b/i.test(name);
+      };
       if (liveCats && Array.isArray(liveCats) && live && Array.isArray(live)) {
         const radioCatIds = new Set(
-          liveCats.filter(c => c.category_name && c.category_name.toLowerCase().includes('radio'))
+          liveCats.filter(c => isRadioCat(c.category_name))
             .map(c => String(c.category_id))
         );
         radioCount = radioCatIds.size > 0
