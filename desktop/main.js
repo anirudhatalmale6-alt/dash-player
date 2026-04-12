@@ -1,6 +1,12 @@
 const { app, BrowserWindow, session, ipcMain } = require('electron');
 const path = require('path');
 
+// Enable proprietary codecs (H.265/HEVC), audio track selection, and hardware acceleration
+app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport,MediaFoundationH265Decoding,AudioTrackSelection');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-accelerated-video-decode');
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,

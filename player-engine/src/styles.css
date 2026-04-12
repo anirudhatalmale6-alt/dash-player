@@ -632,6 +632,11 @@ body {
 .video-fullscreen-btn:hover { background: rgba(139,92,246,0.15); color: var(--purple); }
 .video-close-btn:hover { background: rgba(239,68,68,0.1); color: var(--red); }
 .video-element { width: 100%; aspect-ratio: 16/9; background: #000; }
+
+/* Hide download and overflow menu from native video controls */
+video::-webkit-media-controls-overflow-button { display: none !important; }
+video::-webkit-media-controls-download-button { display: none !important; }
+video::-webkit-media-controls-panel { overflow: hidden !important; }
 .video-loading, .video-error {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   color: var(--text-sub); font-size: 14px; z-index: 2;

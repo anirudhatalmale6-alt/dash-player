@@ -944,7 +944,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           if (!triedHls) tryHls();
           else tryDirect();
         }
-      }, 10000);
+      }, 6000);
     };
 
     const tryHls = () => {
@@ -969,7 +969,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
         setupStallDetection();
         // Detect HLS audio/subtitle tracks
         setTimeout(detectTracks, 500);
-        // Check if video actually renders frames after 5 seconds
+        // Check if video actually renders frames after 3 seconds
         if (isLive) {
           setTimeout(() => {
             if (!mountedRef.current || hlsPlaying) return;
@@ -978,7 +978,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
               cleanup();
               tryMpegTs(baseUrl + '.ts');
             }
-          }, 5000);
+          }, 3000);
         }
       });
       video.addEventListener('playing', () => { hlsPlaying = true; }, { once: true });
@@ -998,7 +998,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           if (!triedMpegTs && isLive) tryMpegTs(baseUrl + '.ts');
           else tryDirect();
         }
-      }, 8000);
+      }, 5000);
     };
 
     const tryDirect = () => {
@@ -1131,7 +1131,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       <div className="inline-player">
         {loading && !error && <div className="inline-player-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="inline-player-error">{error}</div>}
-        <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline controlsList="nodownload" crossOrigin="anonymous" />
+        <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" crossOrigin="anonymous" disablePictureInPicture />
         {!loading && !error && (
           <div className="inline-player-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <TrackMenus />
@@ -1154,7 +1154,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
         </div>
         {loading && !error && <div className="video-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="video-error">{error}</div>}
-        <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload" crossOrigin="anonymous" />
+        <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" crossOrigin="anonymous" disablePictureInPicture />
         {!loading && !error && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
             <TrackMenus />
