@@ -801,7 +801,10 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const [showTrackMenu, setShowTrackMenu] = useState(null); // 'audio' | 'subtitle' | null
   const [usingFfmpeg, setUsingFfmpeg] = useState(false);
   const [probing, setProbing] = useState(false);
+  const [subtitleCues, setSubtitleCues] = useState([]); // parsed VTT cues
+  const [currentSubText, setCurrentSubText] = useState(''); // current subtitle text to display
   const probedRef = useRef(false); // track if we already probed this URL
+  const subTimerRef = useRef(null); // subtitle sync timer
   const mountedRef = useRef(true);
 
   const cleanup = useCallback(() => {
@@ -822,6 +825,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
     if (window.dashPlayer?.ffmpegStop) {
       window.dashPlayer.ffmpegStop().catch(() => {});
     }
+    // Stop subtitle overlay sync
+    if (subTimerRef.current) { clearInterval(subTimerRef.current); subTimerRef.current = null; }
     setUsingFfmpeg(false);
   }, []);
 
@@ -1183,75 +1188,90 @@ function VideoPlayer({ url, onClose, title, inline }) {
     }
   };
 
-  const handleSubtitleChange = async (trackId) => {
-    setSelectedSubtitle(trackId);
-    setShowTrackMenu(null);
-    if (trackId >= 0 && window.dashPlayer?.ffmpegSubtitleUrl && url) {
-      // Extract subtitle via FFmpeg as WebVTT, then load as blob URL to avoid CORS
-      console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
-      const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
-      if (result.success && result.url && videoRef.current) {
-        try {
-          // Fetch the WebVTT data with timeout (FFmpeg subtitle extraction can be slow)
-          console.log('[DashPlayer] Fetching subtitle from:', result.url);
-          const controller = new AbortController();
-          const fetchTimeout = setTimeout(() => controller.abort(), 95000); // 95s timeout (subtitle extraction can be slow for large files)
-          const resp = await fetch(result.url, { signal: controller.signal });
-          clearTimeout(fetchTimeout);
-          const vttText = await resp.text();
-          console.log('[DashPlayer] Subtitle WebVTT loaded, length:', vttText.length, 'preview:', vttText.substring(0, 100));
-          if (vttText.length < 20 || !vttText.includes('WEBVTT')) {
-            console.log('[DashPlayer] Subtitle data is empty or invalid');
-            return;
-          }
-          const blob = new Blob([vttText], { type: 'text/vtt' });
-          const blobUrl = URL.createObjectURL(blob);
-          // Remove ALL existing track elements
-          const existingTracks = videoRef.current.querySelectorAll('track');
-          existingTracks.forEach(t => {
-            if (t._blobUrl) URL.revokeObjectURL(t._blobUrl);
-            t.remove();
-          });
-          // Create and add the track
-          const track = document.createElement('track');
-          track.kind = 'subtitles';
-          track.label = subtitleTracks.find(t => t.id === trackId)?.label || `Subtitle ${trackId + 1}`;
-          track.srclang = subtitleTracks.find(t => t.id === trackId)?.lang || 'und';
-          track.src = blobUrl;
-          track._blobUrl = blobUrl;
-          track.default = true;
-          videoRef.current.appendChild(track);
-          // Enable the track
-          const enableTrack = () => {
-            if (videoRef.current?.textTracks) {
-              for (let i = 0; i < videoRef.current.textTracks.length; i++) {
-                videoRef.current.textTracks[i].mode = 'showing';
-              }
-            }
+  // Parse WebVTT text into array of {start, end, text} cues
+  const parseVTT = (vttText) => {
+    const cues = [];
+    const blocks = vttText.split(/\n\s*\n/);
+    for (const block of blocks) {
+      const lines = block.trim().split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const timeMatch = lines[i].match(/(\d{2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[.,]\d{3})/);
+        if (timeMatch) {
+          const parseTime = (t) => {
+            const p = t.replace(',', '.').split(':');
+            return parseFloat(p[0]) * 3600 + parseFloat(p[1]) * 60 + parseFloat(p[2]);
           };
-          track.addEventListener('load', () => { console.log('[DashPlayer] Subtitle track loaded'); enableTrack(); });
-          setTimeout(enableTrack, 500);
-          setTimeout(enableTrack, 2000);
-        } catch (fetchErr) {
-          console.log('[DashPlayer] Subtitle fetch error:', fetchErr);
-        }
-      } else {
-        console.log('[DashPlayer] FFmpeg subtitle URL failed:', result);
-      }
-    } else if (hlsRef.current && hlsRef.current.subtitleTracks && hlsRef.current.subtitleTracks.length > 0) {
-      hlsRef.current.subtitleTrack = trackId;
-      hlsRef.current.subtitleDisplay = trackId >= 0;
-    } else if (videoRef.current && videoRef.current.textTracks) {
-      for (let i = 0; i < videoRef.current.textTracks.length; i++) {
-        const t = videoRef.current.textTracks[i];
-        if (t.kind === 'subtitles' || t.kind === 'captions') {
-          t.mode = (i === trackId) ? 'showing' : 'disabled';
+          const text = lines.slice(i + 1).join('\n').replace(/<[^>]+>/g, '').trim();
+          if (text) {
+            cues.push({ start: parseTime(timeMatch[1]), end: parseTime(timeMatch[2]), text });
+          }
+          break;
         }
       }
     }
-    if (trackId === -1 && videoRef.current?.textTracks) {
-      for (let i = 0; i < videoRef.current.textTracks.length; i++) {
-        videoRef.current.textTracks[i].mode = 'disabled';
+    console.log(`[DashPlayer] Parsed ${cues.length} subtitle cues`);
+    return cues;
+  };
+
+  // Start subtitle sync timer
+  const startSubtitleSync = (cues) => {
+    if (subTimerRef.current) clearInterval(subTimerRef.current);
+    setSubtitleCues(cues);
+    subTimerRef.current = setInterval(() => {
+      if (!videoRef.current || videoRef.current.paused) return;
+      const t = videoRef.current.currentTime;
+      const cue = cues.find(c => t >= c.start && t <= c.end);
+      setCurrentSubText(cue ? cue.text : '');
+    }, 200);
+  };
+
+  const stopSubtitleSync = () => {
+    if (subTimerRef.current) { clearInterval(subTimerRef.current); subTimerRef.current = null; }
+    setSubtitleCues([]);
+    setCurrentSubText('');
+  };
+
+  const handleSubtitleChange = async (trackId) => {
+    setSelectedSubtitle(trackId);
+    setShowTrackMenu(null);
+
+    if (trackId === -1) {
+      stopSubtitleSync();
+      return;
+    }
+
+    if (trackId >= 0 && window.dashPlayer?.ffmpegSubtitleUrl && url) {
+      console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
+      setCurrentSubText('Loading subtitles...');
+      const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
+      if (result.success && result.url) {
+        try {
+          console.log('[DashPlayer] Fetching subtitle from:', result.url);
+          const controller = new AbortController();
+          const fetchTimeout = setTimeout(() => controller.abort(), 95000);
+          const resp = await fetch(result.url, { signal: controller.signal });
+          clearTimeout(fetchTimeout);
+          const vttText = await resp.text();
+          console.log('[DashPlayer] Subtitle WebVTT loaded, length:', vttText.length, 'preview:', vttText.substring(0, 200));
+          if (vttText.length < 20 || !vttText.includes('WEBVTT')) {
+            console.log('[DashPlayer] Subtitle data is empty or invalid');
+            setCurrentSubText('');
+            return;
+          }
+          const cues = parseVTT(vttText);
+          if (cues.length === 0) {
+            console.log('[DashPlayer] No subtitle cues parsed');
+            setCurrentSubText('');
+            return;
+          }
+          startSubtitleSync(cues);
+        } catch (fetchErr) {
+          console.log('[DashPlayer] Subtitle fetch error:', fetchErr);
+          setCurrentSubText('');
+        }
+      } else {
+        console.log('[DashPlayer] FFmpeg subtitle URL failed:', result);
+        setCurrentSubText('');
       }
     }
   };
@@ -1366,12 +1386,39 @@ function VideoPlayer({ url, onClose, title, inline }) {
     );
   };
 
+  // Subtitle overlay style
+  const subtitleOverlayStyle = {
+    position: 'absolute', bottom: '60px', left: '50%', transform: 'translateX(-50%)',
+    maxWidth: '80%', textAlign: 'center', pointerEvents: 'none', zIndex: 10,
+  };
+  const subtitleTextStyle = {
+    display: 'inline', background: 'rgba(0,0,0,0.75)', color: '#fff',
+    fontSize: '20px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold',
+    padding: '4px 12px', borderRadius: '4px', lineHeight: '1.5',
+    textShadow: '1px 1px 2px #000, -1px -1px 2px #000',
+    boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone',
+  };
+
+  const SubtitleOverlay = () => {
+    if (!currentSubText) return null;
+    return (
+      <div style={subtitleOverlayStyle}>
+        {currentSubText.split('\n').map((line, i) => (
+          <div key={i}><span style={subtitleTextStyle}>{line}</span></div>
+        ))}
+      </div>
+    );
+  };
+
   if (inline) {
     return (
       <div className="inline-player">
         {loading && !error && <div className="inline-player-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="inline-player-error">{error}</div>}
-        <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" crossOrigin="anonymous" disablePictureInPicture />
+        <div style={{ position: 'relative' }}>
+          <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" disablePictureInPicture />
+          <SubtitleOverlay />
+        </div>
         {!loading && !error && (
           <div className="inline-player-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <TrackMenus />
@@ -1399,7 +1446,10 @@ function VideoPlayer({ url, onClose, title, inline }) {
         </div>
         {loading && !error && <div className="video-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="video-error">{error}</div>}
-        <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" crossOrigin="anonymous" disablePictureInPicture />
+        <div style={{ position: 'relative' }}>
+          <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload noplaybackrate" disablePictureInPicture />
+          <SubtitleOverlay />
+        </div>
         {!loading && !error && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
             <TrackMenus />
