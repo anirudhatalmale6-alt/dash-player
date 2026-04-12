@@ -794,6 +794,11 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentFormat, setCurrentFormat] = useState('');
+  const [audioTracks, setAudioTracks] = useState([]);
+  const [selectedAudio, setSelectedAudio] = useState(0);
+  const [subtitleTracks, setSubtitleTracks] = useState([]);
+  const [selectedSubtitle, setSelectedSubtitle] = useState(-1);
+  const [showTrackMenu, setShowTrackMenu] = useState(null); // 'audio' | 'subtitle' | null
   const mountedRef = useRef(true);
 
   const cleanup = useCallback(() => {
@@ -851,6 +856,53 @@ function VideoPlayer({ url, onClose, title, inline }) {
       setError(null);
       setupStallDetection();
     };
+
+    // Detect audio and subtitle tracks
+    const detectTracks = () => {
+      if (!mountedRef.current || !video) return;
+      // Audio tracks from HLS.js
+      if (hlsRef.current && hlsRef.current.audioTracks && hlsRef.current.audioTracks.length > 1) {
+        const tracks = hlsRef.current.audioTracks.map((t, i) => ({
+          id: i, label: t.name || t.lang || `Audio ${i + 1}`, lang: t.lang || ''
+        }));
+        setAudioTracks(tracks);
+        setSelectedAudio(hlsRef.current.audioTrack);
+      }
+      // Native audio tracks (for direct/mpegts playback)
+      else if (video.audioTracks && video.audioTracks.length > 1) {
+        const tracks = [];
+        for (let i = 0; i < video.audioTracks.length; i++) {
+          const t = video.audioTracks[i];
+          tracks.push({ id: i, label: t.label || t.language || `Audio ${i + 1}`, lang: t.language || '' });
+        }
+        setAudioTracks(tracks);
+        const active = tracks.findIndex((_, i) => video.audioTracks[i].enabled);
+        if (active >= 0) setSelectedAudio(active);
+      }
+      // Subtitle / text tracks
+      if (video.textTracks && video.textTracks.length > 0) {
+        const tracks = [];
+        for (let i = 0; i < video.textTracks.length; i++) {
+          const t = video.textTracks[i];
+          if (t.kind === 'subtitles' || t.kind === 'captions') {
+            tracks.push({ id: i, label: t.label || t.language || `Subtitle ${i + 1}`, lang: t.language || '' });
+          }
+        }
+        setSubtitleTracks(tracks);
+      }
+      // HLS.js subtitle tracks
+      if (hlsRef.current && hlsRef.current.subtitleTracks && hlsRef.current.subtitleTracks.length > 0) {
+        const tracks = hlsRef.current.subtitleTracks.map((t, i) => ({
+          id: i, label: t.name || t.lang || `Subtitle ${i + 1}`, lang: t.lang || ''
+        }));
+        setSubtitleTracks(tracks);
+        setSelectedSubtitle(hlsRef.current.subtitleTrack);
+      }
+    };
+
+    // Poll for tracks a few seconds after playback starts
+    const trackDetectTimer = setTimeout(detectTracks, 2000);
+    const trackDetectTimer2 = setTimeout(detectTracks, 5000);
 
     let triedMpegTs = false;
     let triedHls = false;
@@ -915,6 +967,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
         setLoading(false);
         video.play().catch(() => {});
         setupStallDetection();
+        // Detect HLS audio/subtitle tracks
+        setTimeout(detectTracks, 500);
         // Check if video actually renders frames after 5 seconds
         if (isLive) {
           setTimeout(() => {
@@ -983,14 +1037,93 @@ function VideoPlayer({ url, onClose, title, inline }) {
       }, 10000);
     }
 
-    return () => { cleanup(); if (video) { video.src = ''; video.load(); } };
+    return () => { clearTimeout(trackDetectTimer); clearTimeout(trackDetectTimer2); cleanup(); if (video) { video.src = ''; video.load(); } };
   }, [url]);
+
+  const handleAudioChange = (trackId) => {
+    setSelectedAudio(trackId);
+    setShowTrackMenu(null);
+    if (hlsRef.current && hlsRef.current.audioTracks && hlsRef.current.audioTracks.length > 1) {
+      hlsRef.current.audioTrack = trackId;
+    } else if (videoRef.current && videoRef.current.audioTracks) {
+      for (let i = 0; i < videoRef.current.audioTracks.length; i++) {
+        videoRef.current.audioTracks[i].enabled = (i === trackId);
+      }
+    }
+  };
+
+  const handleSubtitleChange = (trackId) => {
+    setSelectedSubtitle(trackId);
+    setShowTrackMenu(null);
+    if (hlsRef.current && hlsRef.current.subtitleTracks && hlsRef.current.subtitleTracks.length > 0) {
+      hlsRef.current.subtitleTrack = trackId;
+      hlsRef.current.subtitleDisplay = trackId >= 0;
+    }
+    if (videoRef.current && videoRef.current.textTracks) {
+      for (let i = 0; i < videoRef.current.textTracks.length; i++) {
+        const t = videoRef.current.textTracks[i];
+        if (t.kind === 'subtitles' || t.kind === 'captions') {
+          t.mode = (i === trackId) ? 'showing' : 'disabled';
+        }
+      }
+    }
+  };
 
   const handleFullscreen = () => {
     const video = videoRef.current;
     if (!video) return;
     if (video.requestFullscreen) video.requestFullscreen();
     else if (video.webkitRequestFullscreen) video.webkitRequestFullscreen();
+  };
+
+  const TrackMenus = () => {
+    const hasAudio = audioTracks.length > 1;
+    const hasSubs = subtitleTracks.length > 0;
+    if (!hasAudio && !hasSubs) return null;
+    return (
+      <div className="track-controls" style={{ display: 'flex', gap: 6, position: 'relative' }}>
+        {hasAudio && (
+          <div style={{ position: 'relative' }}>
+            <button className="track-btn" onClick={() => setShowTrackMenu(showTrackMenu === 'audio' ? null : 'audio')}
+              title="Audio tracks" style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 4, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>
+              &#127911; {audioTracks[selectedAudio]?.label || 'Audio'}
+            </button>
+            {showTrackMenu === 'audio' && (
+              <div style={{ position: 'absolute', bottom: '100%', left: 0, background: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: 4, minWidth: 140, marginBottom: 4, zIndex: 100 }}>
+                {audioTracks.map(t => (
+                  <div key={t.id} onClick={() => handleAudioChange(t.id)}
+                    style={{ padding: '6px 10px', cursor: 'pointer', color: selectedAudio === t.id ? '#a78bfa' : '#fff', background: selectedAudio === t.id ? 'rgba(167,139,250,0.15)' : 'transparent', borderRadius: 4, fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {selectedAudio === t.id ? '✓ ' : '  '}{t.label}{t.lang ? ` (${t.lang})` : ''}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {hasSubs && (
+          <div style={{ position: 'relative' }}>
+            <button className="track-btn" onClick={() => setShowTrackMenu(showTrackMenu === 'subtitle' ? null : 'subtitle')}
+              title="Subtitles" style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 4, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>
+              CC {selectedSubtitle >= 0 ? (subtitleTracks.find(t => t.id === selectedSubtitle)?.label || 'On') : 'Off'}
+            </button>
+            {showTrackMenu === 'subtitle' && (
+              <div style={{ position: 'absolute', bottom: '100%', left: 0, background: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: 4, minWidth: 140, marginBottom: 4, zIndex: 100 }}>
+                <div onClick={() => handleSubtitleChange(-1)}
+                  style={{ padding: '6px 10px', cursor: 'pointer', color: selectedSubtitle === -1 ? '#a78bfa' : '#fff', background: selectedSubtitle === -1 ? 'rgba(167,139,250,0.15)' : 'transparent', borderRadius: 4, fontSize: 12 }}>
+                  {selectedSubtitle === -1 ? '✓ ' : '  '}Off
+                </div>
+                {subtitleTracks.map(t => (
+                  <div key={t.id} onClick={() => handleSubtitleChange(t.id)}
+                    style={{ padding: '6px 10px', cursor: 'pointer', color: selectedSubtitle === t.id ? '#a78bfa' : '#fff', background: selectedSubtitle === t.id ? 'rgba(167,139,250,0.15)' : 'transparent', borderRadius: 4, fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {selectedSubtitle === t.id ? '✓ ' : '  '}{t.label}{t.lang ? ` (${t.lang})` : ''}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (inline) {
@@ -1000,7 +1133,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
         {error && <div className="inline-player-error">{error}</div>}
         <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline controlsList="nodownload" crossOrigin="anonymous" />
         {!loading && !error && (
-          <div className="inline-player-controls">
+          <div className="inline-player-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TrackMenus />
             <button className="fullscreen-btn" onClick={handleFullscreen} title="Fullscreen">&#x26F6;</button>
           </div>
         )}
@@ -1021,6 +1155,11 @@ function VideoPlayer({ url, onClose, title, inline }) {
         {loading && !error && <div className="video-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="video-error">{error}</div>}
         <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload" crossOrigin="anonymous" />
+        {!loading && !error && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+            <TrackMenus />
+          </div>
+        )}
       </div>
     </div>
   );
