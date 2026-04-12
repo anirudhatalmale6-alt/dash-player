@@ -1102,17 +1102,16 @@ function VideoPlayer({ url, onClose, title, inline }) {
     }
 
     // Build the format chain based on stream type
-    // For live: HLS → MPEG-TS → FFmpeg(transcode audio to AAC) → MPEG-TS(video-only) → Direct
-    // For VOD: Direct → FFmpeg(transcode) → MPEG-TS → HLS
+    // For live: HLS first (most channels), then FFmpeg (handles MP2/all codecs) - fast 2-step
+    // For VOD: Direct first (browser native), then FFmpeg (MKV, dual audio, subtitles)
     const steps = isLive ? [
       () => tryHls(baseUrl + '.m3u8'),
-      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'),
-      () => tryFfmpeg(), // FFmpeg transcodes MP2→AAC so browser can play
-      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS', true), // video-only fallback
+      () => tryFfmpeg(), // FFmpeg transcodes MP2→AAC, handles all codecs instantly
+      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'), // fallback if no FFmpeg
       () => tryDirect(url),
     ] : [
       () => tryDirect(url),
-      () => tryFfmpeg(), // FFmpeg for codec compatibility
+      () => tryFfmpeg(), // FFmpeg for MKV, codec compatibility, audio track selection
       () => createMpegTsPlayer(url, 'MPEG-TS'),
       () => tryHls(baseUrl + '.m3u8'),
     ];
