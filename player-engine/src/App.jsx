@@ -87,6 +87,55 @@ const TRANSLATIONS = {
     sort_number: 'By Number',
     sort_rating: 'Rating',
     no_playlists_yet: 'No playlists configured yet. Add one above to get started.',
+    account_info: 'Account Information',
+    account_info_desc: 'Your Xtream Codes subscription details.',
+    expires: 'Expires',
+    unlimited: 'Unlimited',
+    max_connections: 'Max Connections',
+    active: 'Active',
+    subscription_details: 'Subscription Details',
+    username: 'Username',
+    created: 'Created',
+    trial: 'Trial',
+    user_agent: 'User Agent',
+    yes: 'Yes',
+    no: 'No',
+    pin_lock: 'Adult Content PIN Lock',
+    pin_lock_desc: 'Set a 4-digit PIN to protect adult channels.',
+    pin_set: 'PIN is currently set. You can change or disable it.',
+    new_pin: 'New PIN',
+    confirm_pin: 'Confirm',
+    change_pin: 'Change PIN',
+    disable_pin: 'Disable PIN',
+    set_pin: 'Set PIN',
+    four_digit_pin: '4-digit PIN',
+    lang_desc: 'Select the display language for the player interface.',
+    lang_apply: 'Language changes apply immediately to the home screen and main navigation.',
+    vpn_config: 'VPN Configuration',
+    vpn_config_desc: 'Configure VPN to secure your connection. Enable VPN and select your preferred protocol.',
+    enable_vpn: 'Enable VPN',
+    enable: 'Enable',
+    disable: 'Disable',
+    protocol_server: 'Protocol & Server',
+    protocol_server_desc: 'Route all player traffic through a proxy server. Use SOCKS5 or HTTP proxy.',
+    protocol: 'Protocol',
+    server_address: 'Server Address',
+    port: 'Port',
+    authentication: 'Authentication',
+    auth_desc: 'Enter your VPN credentials if required.',
+    password_label: 'Password',
+    save_vpn: 'Save VPN Settings',
+    device_information: 'Device Information',
+    mac_address: 'MAC Address',
+    device_key: 'Device Key',
+    app_version: 'App Version',
+    reset_device_key: 'Reset Device Key',
+    reset_desc: 'Generate a new device key. This will deactivate the current device.',
+    reset_confirm: 'Are you sure? This will require re-activation.',
+    yes_reset: 'Yes, Reset',
+    cancel: 'Cancel',
+    version: 'Version',
+    support: 'Support',
   },
   nl: {
     greeting_morning: 'Goedemorgen',
@@ -167,6 +216,55 @@ const TRANSLATIONS = {
     sort_number: 'Op nummer',
     sort_rating: 'Beoordeling',
     no_playlists_yet: 'Nog geen afspeellijsten. Voeg er hierboven een toe om te beginnen.',
+    account_info: 'Accountinformatie',
+    account_info_desc: 'Uw Xtream Codes abonnementsgegevens.',
+    expires: 'Verloopt',
+    unlimited: 'Onbeperkt',
+    max_connections: 'Max verbindingen',
+    active: 'Actief',
+    subscription_details: 'Abonnementsgegevens',
+    username: 'Gebruikersnaam',
+    created: 'Aangemaakt',
+    trial: 'Proefversie',
+    user_agent: 'User Agent',
+    yes: 'Ja',
+    no: 'Nee',
+    pin_lock: 'PIN-vergrendeling voor volwassenen',
+    pin_lock_desc: 'Stel een 4-cijferige PIN in om kanalen voor volwassenen te beschermen.',
+    pin_set: 'PIN is ingesteld. U kunt deze wijzigen of uitschakelen.',
+    new_pin: 'Nieuwe PIN',
+    confirm_pin: 'Bevestigen',
+    change_pin: 'PIN wijzigen',
+    disable_pin: 'PIN uitschakelen',
+    set_pin: 'PIN instellen',
+    four_digit_pin: '4-cijferige PIN',
+    lang_desc: 'Selecteer de weergavetaal voor de spelerinterface.',
+    lang_apply: 'Taalwijzigingen zijn direct van toepassing op het startscherm en de hoofdnavigatie.',
+    vpn_config: 'VPN-configuratie',
+    vpn_config_desc: 'Configureer VPN om uw verbinding te beveiligen.',
+    enable_vpn: 'VPN inschakelen',
+    enable: 'Inschakelen',
+    disable: 'Uitschakelen',
+    protocol_server: 'Protocol & Server',
+    protocol_server_desc: 'Routeer al het verkeer via een proxyserver. Gebruik SOCKS5 of HTTP proxy.',
+    protocol: 'Protocol',
+    server_address: 'Serveradres',
+    port: 'Poort',
+    authentication: 'Authenticatie',
+    auth_desc: 'Voer uw VPN-inloggegevens in indien vereist.',
+    password_label: 'Wachtwoord',
+    save_vpn: 'VPN-instellingen opslaan',
+    device_information: 'Apparaatinformatie',
+    mac_address: 'MAC-adres',
+    device_key: 'Apparaatsleutel',
+    app_version: 'App-versie',
+    reset_device_key: 'Apparaatsleutel resetten',
+    reset_desc: 'Genereer een nieuwe apparaatsleutel. Dit deactiveert het huidige apparaat.',
+    reset_confirm: 'Weet u het zeker? Dit vereist heractivering.',
+    yes_reset: 'Ja, resetten',
+    cancel: 'Annuleren',
+    version: 'Versie',
+    support: 'Ondersteuning',
   },
   tr: {
     greeting_morning: 'Gunaydin',
@@ -247,6 +345,55 @@ const TRANSLATIONS = {
     sort_number: 'Numaraya Gore',
     sort_rating: 'Puan',
     no_playlists_yet: 'Henuz oynatma listesi yok. Baslamak icin yukaridan bir tane ekleyin.',
+    account_info: 'Hesap Bilgileri',
+    account_info_desc: 'Xtream Codes abonelik bilgileriniz.',
+    expires: 'Bitis tarihi',
+    unlimited: 'Sinirsiz',
+    max_connections: 'Maks baglanti',
+    active: 'Aktif',
+    subscription_details: 'Abonelik Detaylari',
+    username: 'Kullanici adi',
+    created: 'Olusturulma',
+    trial: 'Deneme',
+    user_agent: 'User Agent',
+    yes: 'Evet',
+    no: 'Hayir',
+    pin_lock: 'Yetiskin Icerigi PIN Kilidi',
+    pin_lock_desc: 'Yetiskin kanallari korumak icin 4 haneli bir PIN ayarlayin.',
+    pin_set: 'PIN ayarli. Degistirebilir veya devre disi birakabilirsiniz.',
+    new_pin: 'Yeni PIN',
+    confirm_pin: 'Onayla',
+    change_pin: 'PIN Degistir',
+    disable_pin: 'PIN Devre Disi Birak',
+    set_pin: 'PIN Ayarla',
+    four_digit_pin: '4 haneli PIN',
+    lang_desc: 'Oynatici arayuzu icin goruntuleme dilini secin.',
+    lang_apply: 'Dil degisiklikleri ana ekran ve ana gezinme icin hemen uygulanir.',
+    vpn_config: 'VPN Yapilandirmasi',
+    vpn_config_desc: 'Baglantinizi guvenli hale getirmek icin VPN yapilandirin.',
+    enable_vpn: 'VPN Etkinlestir',
+    enable: 'Etkinlestir',
+    disable: 'Devre disi birak',
+    protocol_server: 'Protokol & Sunucu',
+    protocol_server_desc: 'Tum trafigi bir proxy sunucusu uzerinden yonlendirin.',
+    protocol: 'Protokol',
+    server_address: 'Sunucu Adresi',
+    port: 'Port',
+    authentication: 'Kimlik Dogrulama',
+    auth_desc: 'Gerekli ise VPN kimlik bilgilerinizi girin.',
+    password_label: 'Sifre',
+    save_vpn: 'VPN Ayarlarini Kaydet',
+    device_information: 'Cihaz Bilgileri',
+    mac_address: 'MAC Adresi',
+    device_key: 'Cihaz Anahtari',
+    app_version: 'Uygulama Surumu',
+    reset_device_key: 'Cihaz Anahtarini Sifirla',
+    reset_desc: 'Yeni bir cihaz anahtari olusturun. Bu, mevcut cihazi devre disi birakacaktir.',
+    reset_confirm: 'Emin misiniz? Bu, yeniden aktivasyon gerektirecektir.',
+    yes_reset: 'Evet, Sifirla',
+    cancel: 'Iptal',
+    version: 'Surum',
+    support: 'Destek',
   }
 };
 
@@ -1717,34 +1864,34 @@ function SettingsScreen({ onBack, api }) {
           {activeTab === 'account' && (
             <div className="settings-panel">
               <div className="settings-card">
-                <h3 className="settings-card-title">Account Information</h3>
-                <p className="settings-card-desc">Your Xtream Codes subscription details.</p>
+                <h3 className="settings-card-title">{t('account_info')}</h3>
+                <p className="settings-card-desc">{t('account_info_desc')}</p>
                 <div className="settings-account-grid">
                   <div className="settings-account-item">
                     <div className="settings-account-icon" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>&#10003;</div>
-                    <div className="settings-account-detail"><span className="settings-account-label">Status</span><span className="settings-account-value" style={{ color: '#10b981' }}>{accountInfo.status.toUpperCase()}</span></div>
+                    <div className="settings-account-detail"><span className="settings-account-label">{t('status')}</span><span className="settings-account-value" style={{ color: '#10b981' }}>{accountInfo.status.toUpperCase()}</span></div>
                   </div>
                   <div className="settings-account-item">
                     <div className="settings-account-icon">&#128197;</div>
-                    <div className="settings-account-detail"><span className="settings-account-label">Expires</span><span className="settings-account-value">{accountInfo.expDate}</span></div>
+                    <div className="settings-account-detail"><span className="settings-account-label">{t('expires')}</span><span className="settings-account-value">{accountInfo.expDate === 'Unlimited' ? t('unlimited') : accountInfo.expDate}</span></div>
                   </div>
                   <div className="settings-account-item">
                     <div className="settings-account-icon">&#128279;</div>
-                    <div className="settings-account-detail"><span className="settings-account-label">Max Connections</span><span className="settings-account-value">{accountInfo.maxConnections}</span></div>
+                    <div className="settings-account-detail"><span className="settings-account-label">{t('max_connections')}</span><span className="settings-account-value">{accountInfo.maxConnections}</span></div>
                   </div>
                   <div className="settings-account-item">
                     <div className="settings-account-icon">&#128101;</div>
-                    <div className="settings-account-detail"><span className="settings-account-label">Active</span><span className="settings-account-value">{accountInfo.activeCons} / {accountInfo.maxConnections}</span></div>
+                    <div className="settings-account-detail"><span className="settings-account-label">{t('active')}</span><span className="settings-account-value">{accountInfo.activeCons} / {accountInfo.maxConnections}</span></div>
                   </div>
                 </div>
               </div>
               <div className="settings-card">
-                <h3 className="settings-card-title">Subscription Details</h3>
+                <h3 className="settings-card-title">{t('subscription_details')}</h3>
                 <div className="settings-device-info">
-                  <div className="settings-device-row"><span className="settings-device-label">Username</span><span className="settings-device-value">{accountInfo.username}</span></div>
-                  <div className="settings-device-row"><span className="settings-device-label">Created</span><span className="settings-device-value">{accountInfo.createdAt}</span></div>
-                  <div className="settings-device-row"><span className="settings-device-label">Trial</span><span className="settings-device-value">{accountInfo.isTrial ? 'Yes' : 'No'}</span></div>
-                  <div className="settings-device-row"><span className="settings-device-label">User Agent</span><span className="settings-device-value">DashPlayer/1.0</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">{t('username')}</span><span className="settings-device-value">{accountInfo.username}</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">{t('created')}</span><span className="settings-device-value">{accountInfo.createdAt}</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">{t('trial')}</span><span className="settings-device-value">{accountInfo.isTrial ? t('yes') : t('no')}</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">{t('user_agent')}</span><span className="settings-device-value">DashPlayer/1.0</span></div>
                 </div>
               </div>
             </div>
@@ -1752,25 +1899,25 @@ function SettingsScreen({ onBack, api }) {
           {activeTab === 'parental' && (
             <div className="settings-panel">
               <div className="settings-card">
-                <h3 className="settings-card-title">Adult Content PIN Lock</h3>
-                <p className="settings-card-desc">Set a 4-digit PIN to protect adult channels.</p>
-                <div className="settings-status"><span>Status:</span><span className={`settings-badge ${pinEnabled ? 'active' : 'inactive'}`}>{pinEnabled ? 'ENABLED' : 'DISABLED'}</span></div>
+                <h3 className="settings-card-title">{t('pin_lock')}</h3>
+                <p className="settings-card-desc">{t('pin_lock_desc')}</p>
+                <div className="settings-status"><span>{t('status')}:</span><span className={`settings-badge ${pinEnabled ? 'active' : 'inactive'}`}>{pinEnabled ? t('enabled') : t('disabled')}</span></div>
                 {pinEnabled ? (
                   <div className="settings-pin-section">
-                    <p className="settings-pin-info">PIN is currently set. You can change or disable it.</p>
+                    <p className="settings-pin-info">{t('pin_set')}</p>
                     <div className="settings-pin-row">
-                      <input type="password" maxLength={4} placeholder="New PIN" value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
-                      <input type="password" maxLength={4} placeholder="Confirm" value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
-                      <button className="settings-btn settings-btn-primary" onClick={handleSetPin}>Change PIN</button>
+                      <input type="password" maxLength={4} placeholder={t('new_pin')} value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
+                      <input type="password" maxLength={4} placeholder={t('confirm_pin')} value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
+                      <button className="settings-btn settings-btn-primary" onClick={handleSetPin}>{t('change_pin')}</button>
                     </div>
-                    <button className="settings-btn settings-btn-danger" onClick={handleDisablePin}>Disable PIN</button>
+                    <button className="settings-btn settings-btn-danger" onClick={handleDisablePin}>{t('disable_pin')}</button>
                   </div>
                 ) : (
                   <div className="settings-pin-section">
                     <div className="settings-pin-row">
-                      <input type="password" maxLength={4} placeholder="4-digit PIN" value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
-                      <input type="password" maxLength={4} placeholder="Confirm" value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
-                      <button className="settings-btn settings-btn-primary" onClick={handleSetPin}>Set PIN</button>
+                      <input type="password" maxLength={4} placeholder={t('four_digit_pin')} value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
+                      <input type="password" maxLength={4} placeholder={t('confirm_pin')} value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))} className="settings-pin-input" />
+                      <button className="settings-btn settings-btn-primary" onClick={handleSetPin}>{t('set_pin')}</button>
                     </div>
                   </div>
                 )}
@@ -1782,7 +1929,7 @@ function SettingsScreen({ onBack, api }) {
             <div className="settings-panel">
               <div className="settings-card">
                 <h3 className="settings-card-title">{t('language')}</h3>
-                <p className="settings-card-desc">Select the display language for the player interface.</p>
+                <p className="settings-card-desc">{t('lang_desc')}</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
                   {[
                     { code: 'en', label: 'English', native: 'English' },
@@ -1811,23 +1958,23 @@ function SettingsScreen({ onBack, api }) {
                     </div>
                   ))}
                 </div>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>Language changes apply immediately to the home screen and main navigation.</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>{t('lang_apply')}</p>
               </div>
             </div>
           )}
           {activeTab === 'vpn' && (
             <div className="settings-panel">
               <div className="settings-card">
-                <h3 className="settings-card-title">VPN Configuration</h3>
-                <p className="settings-card-desc">Configure VPN to secure your connection. Enable VPN and select your preferred protocol.</p>
+                <h3 className="settings-card-title">{t('vpn_config')}</h3>
+                <p className="settings-card-desc">{t('vpn_config_desc')}</p>
                 <div className="settings-status">
-                  <span>VPN Status:</span>
+                  <span>{t('vpn_status')}:</span>
                   <span className={`settings-badge ${vpnEnabled ? 'active' : 'inactive'}`}>
-                    {vpnEnabled ? 'ENABLED' : 'DISABLED'}
+                    {vpnEnabled ? t('enabled') : t('disabled')}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Enable VPN</span>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{t('enable_vpn')}</span>
                   <button
                     className={`settings-btn ${vpnEnabled ? 'settings-btn-danger' : 'settings-btn-primary'}`}
                     onClick={async () => {
@@ -1847,16 +1994,16 @@ function SettingsScreen({ onBack, api }) {
                       }
                     }}
                   >
-                    {vpnEnabled ? 'Disable' : 'Enable'}
+                    {vpnEnabled ? t('disable') : t('enable')}
                   </button>
                 </div>
               </div>
               <div className="settings-card">
-                <h3 className="settings-card-title">Protocol & Server</h3>
-                <p className="settings-card-desc">Route all player traffic through a proxy server. Use SOCKS5 or HTTP proxy.</p>
+                <h3 className="settings-card-title">{t('protocol_server')}</h3>
+                <p className="settings-card-desc">{t('protocol_server_desc')}</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div>
-                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Protocol</label>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>{t('protocol')}</label>
                     <select
                       value={vpnProtocol}
                       onChange={e => setVpnProtocol(e.target.value)}
@@ -1868,7 +2015,7 @@ function SettingsScreen({ onBack, api }) {
                     </select>
                   </div>
                   <div>
-                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Server Address</label>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>{t('server_address')}</label>
                     <input
                       type="text"
                       placeholder="e.g., vpn.example.com"
@@ -1878,7 +2025,7 @@ function SettingsScreen({ onBack, api }) {
                     />
                   </div>
                   <div>
-                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Port</label>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>{t('port')}</label>
                     <input
                       type="text"
                       placeholder="e.g., 1194"
@@ -1891,11 +2038,11 @@ function SettingsScreen({ onBack, api }) {
                 </div>
               </div>
               <div className="settings-card">
-                <h3 className="settings-card-title">Authentication</h3>
-                <p className="settings-card-desc">Enter your VPN credentials if required.</p>
+                <h3 className="settings-card-title">{t('authentication')}</h3>
+                <p className="settings-card-desc">{t('auth_desc')}</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div>
-                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Username</label>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>{t('username')}</label>
                     <input
                       type="text"
                       placeholder="VPN username"
@@ -1905,7 +2052,7 @@ function SettingsScreen({ onBack, api }) {
                     />
                   </div>
                   <div>
-                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Password</label>
+                    <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>{t('password_label')}</label>
                     <input
                       type="password"
                       placeholder="VPN password"
@@ -1916,7 +2063,7 @@ function SettingsScreen({ onBack, api }) {
                   </div>
                 </div>
                 <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
-                  <button className="settings-btn settings-btn-primary" onClick={handleVpnSave}>Save VPN Settings</button>
+                  <button className="settings-btn settings-btn-primary" onClick={handleVpnSave}>{t('save_vpn')}</button>
                 </div>
                 {vpnMsg && <p className="settings-msg success">{vpnMsg}</p>}
               </div>
@@ -1925,35 +2072,35 @@ function SettingsScreen({ onBack, api }) {
           {activeTab === 'device' && (
             <div className="settings-panel">
               <div className="settings-card">
-                <h3 className="settings-card-title">Device Information</h3>
+                <h3 className="settings-card-title">{t('device_information')}</h3>
                 <div className="settings-device-info">
                   <div className="settings-device-row">
-                    <span className="settings-device-label">MAC Address</span>
+                    <span className="settings-device-label">{t('mac_address')}</span>
                     <span className="settings-device-value settings-device-copyable" onClick={() => { navigator.clipboard.writeText(device.mac); setCopyMsg('MAC copied!'); setTimeout(() => setCopyMsg(''), 2000); }}>
                       {device.mac} <span className="settings-copy-icon">&#128203;</span>
                     </span>
                   </div>
                   <div className="settings-device-row">
-                    <span className="settings-device-label">Device Key</span>
+                    <span className="settings-device-label">{t('device_key')}</span>
                     <span className="settings-device-value settings-device-copyable" onClick={() => { navigator.clipboard.writeText(device.key); setCopyMsg('Key copied!'); setTimeout(() => setCopyMsg(''), 2000); }}>
                       {device.key} <span className="settings-copy-icon">&#128203;</span>
                     </span>
                   </div>
-                  <div className="settings-device-row"><span className="settings-device-label">App Version</span><span className="settings-device-value">2.0.0</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">{t('app_version')}</span><span className="settings-device-value">2.0.0</span></div>
                 </div>
                 {copyMsg && <p className="settings-msg success" style={{ marginTop: 8 }}>{copyMsg}</p>}
               </div>
               <div className="settings-card">
-                <h3 className="settings-card-title">Reset Device Key</h3>
-                <p className="settings-card-desc">Generate a new device key. This will deactivate the current device.</p>
+                <h3 className="settings-card-title">{t('reset_device_key')}</h3>
+                <p className="settings-card-desc">{t('reset_desc')}</p>
                 {!showResetConfirm ? (
-                  <button className="settings-btn settings-btn-danger" onClick={() => setShowResetConfirm(true)}>Reset Device Key</button>
+                  <button className="settings-btn settings-btn-danger" onClick={() => setShowResetConfirm(true)}>{t('reset_device_key')}</button>
                 ) : (
                   <div className="settings-confirm-box">
-                    <p className="settings-confirm-text">Are you sure? This will require re-activation.</p>
+                    <p className="settings-confirm-text">{t('reset_confirm')}</p>
                     <div className="settings-confirm-btns">
-                      <button className="settings-btn settings-btn-danger" onClick={handleResetDeviceKey}>Yes, Reset</button>
-                      <button className="settings-btn settings-btn-secondary" onClick={() => setShowResetConfirm(false)}>Cancel</button>
+                      <button className="settings-btn settings-btn-danger" onClick={handleResetDeviceKey}>{t('yes_reset')}</button>
+                      <button className="settings-btn settings-btn-secondary" onClick={() => setShowResetConfirm(false)}>{t('cancel')}</button>
                     </div>
                   </div>
                 )}
@@ -1966,9 +2113,9 @@ function SettingsScreen({ onBack, api }) {
               <div className="settings-card" style={{ textAlign: 'center' }}>
                 <div className="settings-about-logo">D</div>
                 <h2 className="settings-about-name">Dash Player</h2>
-                <p className="settings-about-version">Version 2.0.0</p>
-                <p className="settings-card-desc" style={{ marginTop: 16 }}>Multi-platform IPTV player with Xtream Codes support. Live TV, Movies, Series, Radio, EPG, Catch Up, Multi-Screen.</p>
-                <div className="settings-about-links"><span>Support: dashplayer.eu</span></div>
+                <p className="settings-about-version">{t('version')} 2.0.0</p>
+                <p className="settings-card-desc" style={{ marginTop: 16 }}>Multi-platform IPTV player. {t('live_tv')}, {t('movies')}, {t('series')}, {t('radio')}, EPG, {t('catch_up')}, {t('multi_screen')}.</p>
+                <div className="settings-about-links"><span>{t('support')}: dashplayer.eu</span></div>
               </div>
             </div>
           )}
