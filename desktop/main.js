@@ -87,50 +87,66 @@ function ensureLocalServer() {
       if (!sourceUrl) { res.writeHead(400); res.end('Missing url'); return; }
 
       if (mode === 'subtitle') {
-        // Extract subtitle track as WebVTT
+        // Extract subtitle track as WebVTT via pipe - streams data as it becomes available
         const subIndex = url.searchParams.get('subIndex') || '0';
+        const cacheKey = `${sourceUrl}::${subIndex}`;
         console.log(`[FFmpeg] Extracting subtitle track ${subIndex} from:`, sourceUrl);
         const proc = spawn(ffmpegPath, [
-          '-hide_banner', '-loglevel', 'warning',
-          '-probesize', '50000000',     // 50MB probe - find subtitles faster
-          '-analyzeduration', '10000000', // 10 seconds analysis
+          '-hide_banner', '-loglevel', 'info',
+          '-probesize', '100000000',      // 100MB probe for large MKV
+          '-analyzeduration', '30000000', // 30 seconds analysis
           '-i', sourceUrl,
           '-map', `0:s:${subIndex}`,
+          '-an', '-vn',                   // skip audio+video = faster extraction
           '-c:s', 'webvtt',
           '-f', 'webvtt',
           'pipe:1',
         ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
-        // Kill subtitle extraction after 30 seconds if no data
+        // Kill subtitle extraction after 120 seconds if no data
         const subTimeout = setTimeout(() => {
           if (!hasData) {
-            console.log('[FFmpeg sub] Timeout - no subtitle data after 30s');
+            console.log('[FFmpeg sub] Timeout - no subtitle data after 120s');
             try { proc.kill(); } catch(e) {}
           }
-        }, 30000);
+        }, 120000);
 
         let hasData = false;
         let stderrLog = '';
+        let allData = [];
         proc.stdout.on('data', (chunk) => {
           if (!hasData) {
             hasData = true;
+            console.log('[FFmpeg sub] First subtitle data received');
             res.writeHead(200, {
               'Content-Type': 'text/vtt; charset=utf-8',
               'Access-Control-Allow-Origin': '*',
               'Cache-Control': 'no-cache',
             });
           }
+          allData.push(chunk);
           res.write(chunk);
         });
-        proc.stderr.on('data', (d) => { stderrLog += d.toString(); });
+        proc.stderr.on('data', (d) => {
+          const msg = d.toString();
+          stderrLog += msg;
+          const lines = msg.split('\n').filter(l => l.trim() && !l.includes('frame=') && !l.includes('size='));
+          lines.forEach(l => { if (l.trim()) console.log('[FFmpeg sub]', l.trim()); });
+        });
         proc.on('exit', (code) => {
           clearTimeout(subTimeout);
           if (!hasData) {
-            console.log('[FFmpeg sub] No subtitle data produced. Code:', code, 'stderr:', stderrLog.slice(-300).trim());
+            console.log('[FFmpeg sub] No subtitle data produced. Code:', code, 'stderr:', stderrLog.slice(-500).trim());
             res.writeHead(200, { 'Content-Type': 'text/vtt', 'Access-Control-Allow-Origin': '*' });
             res.end('WEBVTT\n\n'); // empty valid WebVTT
           } else {
-            console.log('[FFmpeg sub] Subtitle extraction complete');
+            console.log('[FFmpeg sub] Subtitle extraction complete, caching result');
+            // Cache to temp file for future requests
+            const tmpFile = path.join(os.tmpdir(), `dashplayer-sub-${Date.now()}-${subIndex}.vtt`);
+            try {
+              fs.writeFileSync(tmpFile, Buffer.concat(allData));
+              subtitleCache.set(cacheKey, { ready: true, path: tmpFile });
+            } catch(e) { console.log('[FFmpeg sub] Cache write error:', e.message); }
             res.end();
           }
         });
@@ -385,13 +401,13 @@ ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack }) => {
   return { success: true, url: transUrl };
 });
 
-// Extract subtitle to temp file and return when ready
+// Extract subtitle - returns pipe URL immediately for streaming
 ipcMain.handle('ffmpeg-subtitle-url', async (event, { url, subIndex }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
 
   const cacheKey = `${url}::${subIndex || 0}`;
 
-  // Check cache first
+  // Check cache first - if we have a completed extraction, serve from file
   if (subtitleCache.has(cacheKey)) {
     const cached = subtitleCache.get(cacheKey);
     if (cached.ready && cached.path && fs.existsSync(cached.path)) {
@@ -399,70 +415,13 @@ ipcMain.handle('ffmpeg-subtitle-url', async (event, { url, subIndex }) => {
       const port = await ensureLocalServer();
       return { success: true, url: `http://127.0.0.1:${port}/stream?mode=subtitle-file&path=${encodeURIComponent(cached.path)}` };
     }
-    if (cached.error) {
-      return { success: false, error: cached.error };
-    }
   }
 
-  // Extract subtitle to temp file
-  const tmpFile = path.join(os.tmpdir(), `dashplayer-sub-${Date.now()}-${subIndex || 0}.vtt`);
-  console.log(`[FFmpeg sub] Extracting subtitle track ${subIndex || 0} to:`, tmpFile);
-
-  return new Promise((resolve) => {
-    const proc = spawn(ffmpegPath, [
-      '-hide_banner', '-loglevel', 'info',
-      '-probesize', '100000000',       // 100MB probe for large MKV
-      '-analyzeduration', '30000000',  // 30s analysis
-      '-i', url,
-      '-map', `0:s:${subIndex || 0}`,
-      '-an', '-vn',                    // ignore audio+video = much faster
-      '-c:s', 'webvtt',
-      '-f', 'webvtt',
-      '-y', tmpFile,
-    ], { stdio: ['pipe', 'pipe', 'pipe'] });
-
-    let stderrLog = '';
-    proc.stderr.on('data', (d) => {
-      const msg = d.toString();
-      stderrLog += msg;
-      // Log progress lines
-      const lines = msg.split('\n').filter(l => l.trim() && !l.includes('frame='));
-      lines.forEach(l => { if (l.trim()) console.log('[FFmpeg sub]', l.trim()); });
-    });
-
-    const timeout = setTimeout(() => {
-      console.log('[FFmpeg sub] Extraction timeout (90s), killing');
-      try { proc.kill(); } catch(e) {}
-    }, 90000);
-
-    proc.on('exit', async (code) => {
-      clearTimeout(timeout);
-      if (fs.existsSync(tmpFile)) {
-        const stat = fs.statSync(tmpFile);
-        if (stat.size > 10) {
-          console.log(`[FFmpeg sub] Subtitle extracted: ${tmpFile} (${stat.size} bytes)`);
-          subtitleCache.set(cacheKey, { ready: true, path: tmpFile });
-          const port = await ensureLocalServer();
-          resolve({ success: true, url: `http://127.0.0.1:${port}/stream?mode=subtitle-file&path=${encodeURIComponent(tmpFile)}` });
-        } else {
-          console.log('[FFmpeg sub] Subtitle file empty. stderr:', stderrLog.slice(-300));
-          subtitleCache.set(cacheKey, { error: 'Empty subtitle' });
-          try { fs.unlinkSync(tmpFile); } catch(e) {}
-          resolve({ success: false, error: 'Subtitle extraction produced no data' });
-        }
-      } else {
-        console.log('[FFmpeg sub] No output file. Code:', code, 'stderr:', stderrLog.slice(-300));
-        subtitleCache.set(cacheKey, { error: 'Extraction failed' });
-        resolve({ success: false, error: 'Subtitle extraction failed' });
-      }
-    });
-
-    proc.on('error', (err) => {
-      clearTimeout(timeout);
-      console.log('[FFmpeg sub] Process error:', err.message);
-      resolve({ success: false, error: err.message });
-    });
-  });
+  // Return the pipe URL immediately - FFmpeg will stream data as it extracts
+  const port = await ensureLocalServer();
+  const pipeUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&subIndex=${subIndex || 0}&mode=subtitle`;
+  console.log(`[FFmpeg sub] Returning pipe URL for subtitle track ${subIndex || 0}`);
+  return { success: true, url: pipeUrl };
 });
 
 // Stop current FFmpeg process

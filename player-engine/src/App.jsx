@@ -986,7 +986,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
         video.play().catch(() => {});
         setupStallDetection();
         setTimeout(detectTracks, 500);
-        // Black screen detection: if no frames after 3s, move on
+        // Black screen detection: if no frames after 1.5s, move on (fast fallback to FFmpeg for MP2)
         if (isLive) {
           setTimeout(() => {
             if (!mountedRef.current || playbackStarted) return;
@@ -995,7 +995,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
               hlsErrorTriggered = true; cleanup();
               nextStep();
             }
-          }, 3000);
+          }, 1500);
         }
       });
       video.addEventListener('playing', () => { playbackStarted = true; }, { once: true });
@@ -1014,7 +1014,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           hlsErrorTriggered = true; cleanup();
           nextStep();
         }
-      }, 4000);
+      }, isLive ? 2500 : 4000); // faster timeout for live = quick FFmpeg fallback
       return true;
     };
 
@@ -1213,14 +1213,17 @@ function VideoPlayer({ url, onClose, title, inline }) {
     return cues;
   };
 
-  // Start subtitle sync timer
+  // Start subtitle sync timer - uses subtitleCues state (updated as more cues stream in)
+  const subtitleCuesRef = useRef([]);
   const startSubtitleSync = (cues) => {
     if (subTimerRef.current) clearInterval(subTimerRef.current);
+    subtitleCuesRef.current = cues;
     setSubtitleCues(cues);
     subTimerRef.current = setInterval(() => {
       if (!videoRef.current || videoRef.current.paused) return;
       const t = videoRef.current.currentTime;
-      const cue = cues.find(c => t >= c.start && t <= c.end);
+      const activeCues = subtitleCuesRef.current;
+      const cue = activeCues.find(c => t >= c.start && t <= c.end);
       setCurrentSubText(cue ? cue.text : '');
     }, 200);
   };
@@ -1248,23 +1251,52 @@ function VideoPlayer({ url, onClose, title, inline }) {
         try {
           console.log('[DashPlayer] Fetching subtitle from:', result.url);
           const controller = new AbortController();
-          const fetchTimeout = setTimeout(() => controller.abort(), 95000);
+          const fetchTimeout = setTimeout(() => controller.abort(), 120000); // 120s for large files
           const resp = await fetch(result.url, { signal: controller.signal });
           clearTimeout(fetchTimeout);
-          const vttText = await resp.text();
-          console.log('[DashPlayer] Subtitle WebVTT loaded, length:', vttText.length, 'preview:', vttText.substring(0, 200));
-          if (vttText.length < 20 || !vttText.includes('WEBVTT')) {
-            console.log('[DashPlayer] Subtitle data is empty or invalid');
+
+          // Stream the response - start showing subtitles as soon as we get data
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let vttText = '';
+          let partialCues = [];
+          let started = false;
+
+          const readChunk = async () => {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              vttText += decoder.decode(value, { stream: true });
+              // Parse cues progressively
+              const newCues = parseVTT(vttText);
+              if (newCues.length > partialCues.length) {
+                partialCues = newCues;
+                if (!started && partialCues.length > 0) {
+                  started = true;
+                  console.log(`[DashPlayer] First ${partialCues.length} subtitle cues ready`);
+                  startSubtitleSync(partialCues);
+                } else if (started) {
+                  // Update existing sync with more cues
+                  subtitleCuesRef.current = partialCues;
+                  setSubtitleCues(partialCues);
+                }
+              }
+            }
+          };
+          await readChunk();
+
+          // Final parse with all data
+          vttText += decoder.decode(); // flush
+          const finalCues = parseVTT(vttText);
+          console.log(`[DashPlayer] Subtitle extraction complete: ${finalCues.length} cues total, ${vttText.length} bytes`);
+          if (finalCues.length > 0) {
+            subtitleCuesRef.current = finalCues;
+            setSubtitleCues(finalCues);
+            if (!started) startSubtitleSync(finalCues);
+          } else {
+            console.log('[DashPlayer] No subtitle cues found in response');
             setCurrentSubText('');
-            return;
           }
-          const cues = parseVTT(vttText);
-          if (cues.length === 0) {
-            console.log('[DashPlayer] No subtitle cues parsed');
-            setCurrentSubText('');
-            return;
-          }
-          startSubtitleSync(cues);
         } catch (fetchErr) {
           console.log('[DashPlayer] Subtitle fetch error:', fetchErr);
           setCurrentSubText('');
