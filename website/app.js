@@ -29,9 +29,11 @@ function initRouter() {
 }
 
 function handleRoute() {
-  const hash = (window.location.hash || '#home').replace('#', '');
+  const rawHash = (window.location.hash || '#home').replace('#', '');
+  // Parse section and query params from hash (e.g. activate?mac=XX&key=YY)
+  const [section_raw, queryString] = rawHash.split('?');
   const validSections = ['home', 'playlist', 'activate', 'mac-change'];
-  const section = validSections.includes(hash) ? hash : 'home';
+  const section = validSections.includes(section_raw) ? section_raw : 'home';
 
   // Hide all pages
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -49,6 +51,47 @@ function handleRoute() {
 
   // Close mobile nav
   document.getElementById('navLinks')?.classList.remove('open');
+
+  // Auto-fill activate form from URL params
+  if (section === 'activate' && queryString) {
+    const params = new URLSearchParams(queryString);
+    const mac = params.get('mac');
+    const key = params.get('key');
+    if (mac) {
+      const macInput = document.getElementById('activateMac');
+      if (macInput) macInput.value = decodeURIComponent(mac);
+    }
+    if (key) {
+      const keyInput = document.getElementById('activateDeviceKey');
+      if (keyInput) keyInput.value = decodeURIComponent(key);
+    }
+    // Auto-submit lookup if both fields are filled
+    if (mac && key) {
+      currentActivateMac = decodeURIComponent(mac);
+      currentActivateKey = decodeURIComponent(key);
+      lookupActivateDevice(currentActivateMac, currentActivateKey);
+    }
+  }
+
+  // Auto-fill playlist form from URL params
+  if (section === 'playlist' && queryString) {
+    const params = new URLSearchParams(queryString);
+    const mac = params.get('mac');
+    const key = params.get('key');
+    if (mac) {
+      const macInput = document.getElementById('playlistMac');
+      if (macInput) macInput.value = decodeURIComponent(mac);
+    }
+    if (key) {
+      const keyInput = document.getElementById('playlistDeviceKey');
+      if (keyInput) keyInput.value = decodeURIComponent(key);
+    }
+    if (mac && key) {
+      currentPlaylistMac = decodeURIComponent(mac);
+      currentPlaylistKey = decodeURIComponent(key);
+      lookupPlaylistDevice(currentPlaylistMac, currentPlaylistKey);
+    }
+  }
 
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });

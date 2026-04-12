@@ -3,6 +3,7 @@ import { mockData } from './services/xtreamApi';
 import axios from 'axios';
 import mpegts from 'mpegts.js';
 import Hls from 'hls.js';
+import { QRCodeSVG } from 'qrcode.react';
 import './styles.css';
 
 /* ── Favorites helper (persisted in localStorage) ── */
@@ -294,30 +295,8 @@ function ActivationScreen({ onActivated }) {
           <div className="activation-logo">D</div>
           <div className="activation-app-name">Dash Player</div>
           <div className="activation-qr">
-            <div className="activation-qr-placeholder">
-              <svg width={qrSize} height={qrSize} viewBox="0 0 140 140">
-                <rect width="140" height="140" rx="12" fill="rgba(255,255,255,0.1)"/>
-                <rect x="12" y="12" width="36" height="36" rx="4" fill="#8b5cf6"/>
-                <rect x="18" y="18" width="24" height="24" rx="2" fill="rgba(255,255,255,0.1)"/>
-                <rect x="24" y="24" width="12" height="12" rx="1" fill="#8b5cf6"/>
-                <rect x="92" y="12" width="36" height="36" rx="4" fill="#8b5cf6"/>
-                <rect x="98" y="18" width="24" height="24" rx="2" fill="rgba(255,255,255,0.1)"/>
-                <rect x="104" y="24" width="12" height="12" rx="1" fill="#8b5cf6"/>
-                <rect x="12" y="92" width="36" height="36" rx="4" fill="#8b5cf6"/>
-                <rect x="18" y="98" width="24" height="24" rx="2" fill="rgba(255,255,255,0.1)"/>
-                <rect x="24" y="104" width="12" height="12" rx="1" fill="#8b5cf6"/>
-                <rect x="56" y="56" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="72" y="56" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="56" y="72" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="88" y="56" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="56" y="88" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="72" y="88" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="88" y="88" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="104" y="88" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="120" y="88" width="8" height="8" rx="1" fill="#8b5cf6"/>
-                <rect x="52" y="52" width="16" height="16" rx="4" fill="#8b5cf6"/>
-                <text x="60" y="64" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">D</text>
-              </svg>
+            <div className="activation-qr-placeholder" style={{background:'#fff',borderRadius:12,padding:8}}>
+              <QRCodeSVG value={`https://dashplayer.eu/#activate?mac=${encodeURIComponent(device.mac)}&key=${encodeURIComponent(device.key)}`} size={qrSize} fgColor="#8b5cf6" bgColor="#ffffff" level="M" />
             </div>
           </div>
           <p className="activation-qr-text">Scan QR to add playlist</p>
@@ -2129,19 +2108,21 @@ function SpeedTestScreen({ onBack }) {
   );
 }
 
-/* ══════ TRIAL EXPIRED SCREEN ══════ */
-function TrialExpiredScreen() {
+/* ══════ EXPIRED SCREEN ══════ */
+function ExpiredScreen({ licenseType }) {
   const [device] = useState(() => getDeviceIdentity());
   const panelUrl = 'https://dashplayer.eu';
+  const isTrial = licenseType === 'trial';
+  const activateUrl = `${panelUrl}/#activate?mac=${encodeURIComponent(device.mac)}&key=${encodeURIComponent(device.key)}`;
   return (
     <div className="activation-screen">
       <div className="activation-container">
         <div className="activation-info">
           <div className="activation-info-inner">
             <div className="trial-expired-icon">&#9888;</div>
-            <h2 className="trial-expired-title">Your Trial Has Ended</h2>
-            <p className="trial-expired-desc">Your free trial period has expired. Please activate your device.</p>
-            <a href={panelUrl} className="activation-url">{panelUrl}</a>
+            <h2 className="trial-expired-title">{isTrial ? 'Your Trial Has Ended' : 'License Expired'}</h2>
+            <p className="trial-expired-desc">{isTrial ? 'Your free trial period has expired. Please activate your device.' : 'Your license has expired. Please renew to continue using the player.'}</p>
+            <a href={activateUrl} className="activation-url">{panelUrl}</a>
             <div className="activation-field">
               <label className="activation-label">Mac Address</label>
               <div className="activation-value-row"><span className="activation-value">{device.mac}</span></div>
@@ -2155,7 +2136,8 @@ function TrialExpiredScreen() {
         <div className="activation-brand">
           <div className="activation-logo">D</div>
           <div className="activation-app-name">Dash Player</div>
-          <p className="activation-qr-text">Scan to activate</p>
+          <p className="activation-qr-text">Scan to {isTrial ? 'activate' : 'renew'}</p>
+          <QRCodeSVG value={activateUrl} size={180} fgColor="#8b5cf6" bgColor="#ffffff" level="M" />
         </div>
       </div>
     </div>
@@ -3209,7 +3191,7 @@ export default function App() {
   }
 
   if (isTrialExpired || isExpired) {
-    return <TrialExpiredScreen />;
+    return <ExpiredScreen licenseType={playerLicense.type === 'trial' ? 'trial' : 'yearly'} />;
   }
 
   const handleNavigate = (section) => setScreen(section);
