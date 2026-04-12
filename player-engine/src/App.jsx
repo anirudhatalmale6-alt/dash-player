@@ -904,55 +904,54 @@ function VideoPlayer({ url, onClose, title, inline }) {
     const trackDetectTimer = setTimeout(detectTracks, 2000);
     const trackDetectTimer2 = setTimeout(detectTracks, 5000);
 
-    let triedMpegTs = false;
-    let triedHls = false;
-    let triedDirect = false;
+    // Format chain: each format tried exactly once, short timeouts for fast switching
+    let currentStep = 0;
+    let playbackStarted = false;
 
-    const tryMpegTs = (streamUrl) => {
-      if (triedMpegTs || !mpegts.isSupported()) return triedHls ? tryDirect() : tryHls();
-      triedMpegTs = true;
-      if (!mountedRef.current) return;
-      setCurrentFormat('MPEG-TS');
-      const player = mpegts.createPlayer({ type: 'mpegts', isLive, url: streamUrl }, {
-        enableWorker: true, enableStashBuffer: false, stashInitialSize: 128,
+    const createMpegTsPlayer = (streamUrl, label) => {
+      if (!mpegts.isSupported() || !mountedRef.current) return false;
+      setCurrentFormat(label);
+      console.log(`[DashPlayer] Trying ${label}: ${streamUrl}`);
+      const player = mpegts.createPlayer({ type: 'mpegts', isLive, url: streamUrl, hasAudio: true, hasVideo: true }, {
+        enableWorker: true, enableStashBuffer: true, stashInitialSize: 384,
         lazyLoad: false, lazyLoadMaxDuration: isLive ? 30 : 300,
         liveBufferLatencyChasing: isLive,
-        liveBufferLatencyMaxLatency: isLive ? 3 : 60,
+        liveBufferLatencyMaxLatency: isLive ? 5 : 60,
         liveBufferLatencyMinRemain: isLive ? 0.5 : 3,
-        liveSyncTargetLatency: isLive ? 1.5 : undefined,
+        liveSyncTargetLatency: isLive ? 2 : undefined,
         autoCleanupSourceBuffer: true, autoCleanupMaxBackwardDuration: 30,
-        autoCleanupMinBackwardDuration: 15, seekType: 'range', fixAudioTimestampGap: true,
+        autoCleanupMinBackwardDuration: 15, seekType: 'range',
+        fixAudioTimestampGap: true, accurateSeek: true,
       });
       playerRef.current = player;
       player.attachMediaElement(video);
       player.load();
       let errorTriggered = false;
-      player.on(mpegts.Events.ERROR, () => {
+      player.on(mpegts.Events.ERROR, (type, detail, info) => {
+        console.log(`[DashPlayer] ${label} error:`, type, detail, info);
         if (errorTriggered) return;
         errorTriggered = true;
         cleanup();
-        if (!triedHls) tryHls();
-        else tryDirect();
+        nextStep();
       });
-      video.addEventListener('canplay', onPlaying, { once: true });
-      video.addEventListener('playing', onPlaying, { once: true });
-      setTimeout(() => { if (mountedRef.current && video) video.play().catch(() => {}); }, 300);
+      video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
+      video.addEventListener('playing', () => { playbackStarted = true; onPlaying(); }, { once: true });
+      setTimeout(() => { if (mountedRef.current && video) video.play().catch(() => {}); }, 200);
       retryTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || playbackStarted) return;
         if (video.readyState < 2 && !errorTriggered) {
+          console.log(`[DashPlayer] ${label} timeout, readyState=${video.readyState}`);
           errorTriggered = true; cleanup();
-          if (!triedHls) tryHls();
-          else tryDirect();
+          nextStep();
         }
-      }, 6000);
+      }, 4000);
+      return true;
     };
 
-    const tryHls = () => {
-      if (triedHls || !Hls.isSupported()) return triedMpegTs ? tryDirect() : tryMpegTs(baseUrl + '.ts');
-      triedHls = true;
-      if (!mountedRef.current) return;
+    const tryHls = (hlsUrl) => {
+      if (!Hls.isSupported() || !mountedRef.current) return false;
       setCurrentFormat('HLS');
-      const hlsUrl = baseUrl + '.m3u8';
+      console.log(`[DashPlayer] Trying HLS: ${hlsUrl}`);
       const hls = new Hls({
         enableWorker: true, maxBufferLength: isLive ? 10 : 60,
         maxMaxBufferLength: isLive ? 30 : 300, startLevel: -1,
@@ -961,81 +960,99 @@ function VideoPlayer({ url, onClose, title, inline }) {
       hlsRef.current = hls;
       hls.loadSource(hlsUrl);
       hls.attachMedia(video);
-      let hlsPlaying = false;
+      let hlsErrorTriggered = false;
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (!mountedRef.current) return;
         setLoading(false);
         video.play().catch(() => {});
         setupStallDetection();
-        // Detect HLS audio/subtitle tracks
         setTimeout(detectTracks, 500);
-        // Check if video actually renders frames after 3 seconds
+        // Black screen detection: if no frames after 3s, move on
         if (isLive) {
           setTimeout(() => {
-            if (!mountedRef.current || hlsPlaying) return;
-            if (video && video.currentTime < 0.5 && video.readyState < 3 && !triedMpegTs) {
-              console.log('[DashPlayer] HLS connected but no video frames, trying MPEG-TS');
-              cleanup();
-              tryMpegTs(baseUrl + '.ts');
+            if (!mountedRef.current || playbackStarted) return;
+            if (video && video.currentTime < 0.5 && video.readyState < 3) {
+              console.log('[DashPlayer] HLS connected but no video frames');
+              hlsErrorTriggered = true; cleanup();
+              nextStep();
             }
           }, 3000);
         }
       });
-      video.addEventListener('playing', () => { hlsPlaying = true; }, { once: true });
-      video.addEventListener('timeupdate', () => { if (video.currentTime > 0.5) hlsPlaying = true; }, { once: true });
-      let hlsErrorTriggered = false;
+      video.addEventListener('playing', () => { playbackStarted = true; }, { once: true });
+      video.addEventListener('timeupdate', () => { if (video.currentTime > 0.5) playbackStarted = true; }, { once: true });
       hls.on(Hls.Events.ERROR, (_, data) => {
+        console.log('[DashPlayer] HLS error:', data.type, data.details, data.fatal);
         if (data.fatal && !hlsErrorTriggered) {
           hlsErrorTriggered = true; cleanup();
-          if (!triedMpegTs && isLive) tryMpegTs(baseUrl + '.ts');
-          else tryDirect();
+          nextStep();
         }
       });
       retryTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || playbackStarted) return;
         if (video.readyState < 2 && !hlsErrorTriggered) {
+          console.log('[DashPlayer] HLS timeout');
           hlsErrorTriggered = true; cleanup();
-          if (!triedMpegTs && isLive) tryMpegTs(baseUrl + '.ts');
-          else tryDirect();
+          nextStep();
         }
-      }, 5000);
+      }, 4000);
+      return true;
     };
 
-    const tryDirect = () => {
-      triedDirect = true;
-      if (!mountedRef.current) return;
+    const tryDirect = (directUrl) => {
+      if (!mountedRef.current) return false;
       setCurrentFormat('Direct');
-      video.src = url;
-      video.addEventListener('canplay', onPlaying, { once: true });
-      video.addEventListener('playing', onPlaying, { once: true });
-      video.addEventListener('error', () => {
-        if (!mountedRef.current) return;
-        setError('Stream unavailable - try another channel');
-        setLoading(false);
-      }, { once: true });
-      video.play().catch(() => {});
-    };
-
-    if (isLive) {
-      // Try HLS first, then MPEG-TS, then direct
-      tryHls();
-    } else {
-      setCurrentFormat('Direct');
-      video.src = url;
-      video.addEventListener('canplay', onPlaying, { once: true });
-      video.addEventListener('playing', onPlaying, { once: true });
-      let vodErrorTriggered = false;
-      video.addEventListener('error', () => {
-        if (vodErrorTriggered || !mountedRef.current) return;
-        vodErrorTriggered = true;
-        tryMpegTs(baseUrl + '.ts');
+      console.log(`[DashPlayer] Trying Direct: ${directUrl}`);
+      video.src = directUrl;
+      video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
+      video.addEventListener('playing', () => { playbackStarted = true; onPlaying(); }, { once: true });
+      video.addEventListener('error', (e) => {
+        console.log('[DashPlayer] Direct error:', e);
+        if (!mountedRef.current || playbackStarted) return;
+        cleanup();
+        nextStep();
       }, { once: true });
       video.play().catch(() => {});
       retryTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current || video.readyState >= 2) return;
-        if (!vodErrorTriggered) { vodErrorTriggered = true; tryMpegTs(baseUrl + '.ts'); }
-      }, 10000);
-    }
+        if (!mountedRef.current || playbackStarted) return;
+        if (video.readyState < 2) {
+          console.log('[DashPlayer] Direct timeout');
+          cleanup();
+          nextStep();
+        }
+      }, 4000);
+      return true;
+    };
+
+    // Build the format chain based on stream type
+    // For live: HLS → MPEG-TS(.ts) → MPEG-TS(raw, no ext) → Direct
+    // For VOD: Direct → MPEG-TS(.ts) → HLS
+    const rawUrl = baseUrl.replace(/\/live\//, '/'); // URL without /live/ prefix (VLC format)
+    const steps = isLive ? [
+      () => tryHls(baseUrl + '.m3u8'),
+      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'),
+      () => createMpegTsPlayer(rawUrl, 'MPEG-TS (raw)'),
+      () => tryDirect(url),
+    ] : [
+      () => tryDirect(url),
+      () => createMpegTsPlayer(url, 'MPEG-TS'),
+      () => tryHls(baseUrl + '.m3u8'),
+      () => tryDirect(baseUrl + '.mkv'),
+    ];
+
+    const nextStep = () => {
+      currentStep++;
+      if (currentStep >= steps.length) {
+        setError('Stream unavailable - try another channel');
+        setLoading(false);
+        return;
+      }
+      if (!mountedRef.current) return;
+      steps[currentStep]();
+    };
+
+    // Start the chain
+    steps[0]();
 
     return () => { clearTimeout(trackDetectTimer); clearTimeout(trackDetectTimer2); cleanup(); if (video) { video.src = ''; video.load(); } };
   }, [url]);

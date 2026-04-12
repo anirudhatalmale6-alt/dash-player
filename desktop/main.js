@@ -28,13 +28,16 @@ function createWindow() {
   // Load the built React app
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
 
-  // Open DevTools in development
+  // Open DevTools with F12 or --dev flag
   if (process.argv.includes('--dev')) {
     win.webContents.openDevTools();
   }
 
-  // Fullscreen toggle with F11
+  // Keyboard shortcuts: F11 fullscreen, F12 DevTools
   win.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      win.webContents.toggleDevTools();
+    }
     if (input.key === 'F11') {
       win.setFullScreen(!win.isFullScreen());
     }
