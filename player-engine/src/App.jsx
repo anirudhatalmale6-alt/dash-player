@@ -140,7 +140,8 @@ async function syncPlaylistsToBackend(playlists) {
     const backendIds = new Set(backendPlaylists.map(p => p.id));
     // Add new playlists that don't exist in backend
     for (const pl of playlists) {
-      const exists = backendPlaylists.find(bp => bp.server_url === pl.server_url && bp.username === pl.username);
+      const normUrl = (u) => (u || '').replace(/\/+$/, '').toLowerCase();
+      const exists = backendPlaylists.find(bp => normUrl(bp.server_url) === normUrl(pl.server_url) && bp.username === pl.username);
       if (!exists) {
         await axios.post(`${apiBase}/device/playlists`, {
           mac_address: device.mac, device_key: device.key,
@@ -164,33 +165,30 @@ async function fetchPlaylistsFromBackend() {
     const res = await axios.post(`${apiBase}/device/lookup`, { mac_address: device.mac, device_key: device.key });
     const backendPlaylists = res.data?.playlists || [];
     if (backendPlaylists.length === 0) return getPlaylists();
+    // Normalize URL for comparison (strip trailing slash)
+    const normUrl = (u) => (u || '').replace(/\/+$/, '').toLowerCase();
+    // Use backend as source of truth, merge in any local-only playlists
+    const merged = backendPlaylists.map(bp => ({
+      id: bp.id || Date.now() + Math.random(),
+      name: bp.name || 'My Playlist',
+      server_url: bp.server_url,
+      username: bp.username,
+      password: bp.password,
+      output_format: bp.output_format || 'm3u8',
+      is_default: bp.is_default === 1 || bp.is_default === true,
+      pin: bp.pin || '',
+    }));
+    // Add local-only playlists that don't exist in backend
     const localPlaylists = getPlaylists();
-    // Merge: keep all local playlists, add backend ones that don't exist locally (matched by server_url+username)
-    const merged = [...localPlaylists];
-    for (const bp of backendPlaylists) {
-      const existsLocally = localPlaylists.find(lp => lp.server_url === bp.server_url && lp.username === bp.username);
-      if (!existsLocally) {
-        merged.push({
-          id: bp.id || Date.now() + Math.random(),
-          name: bp.name || 'My Playlist',
-          server_url: bp.server_url,
-          username: bp.username,
-          password: bp.password,
-          output_format: bp.output_format || 'm3u8',
-          is_default: bp.is_default === 1 || bp.is_default === true,
-          pin: bp.pin || '',
-        });
+    for (const lp of localPlaylists) {
+      const existsInBackend = backendPlaylists.find(bp => normUrl(bp.server_url) === normUrl(lp.server_url) && bp.username === lp.username);
+      if (!existsInBackend) {
+        merged.push({ ...lp, is_default: false });
       }
     }
-    // If no default is set in local, try to pick from backend
+    // Ensure one default
     if (merged.length > 0 && !merged.find(p => p.is_default)) {
-      const backendDefault = backendPlaylists.find(bp => bp.is_default === 1 || bp.is_default === true);
-      if (backendDefault) {
-        const idx = merged.findIndex(p => p.server_url === backendDefault.server_url && p.username === backendDefault.username);
-        if (idx >= 0) merged[idx].is_default = true;
-      } else {
-        merged[0].is_default = true;
-      }
+      merged[0].is_default = true;
     }
     localStorage.setItem('dash_playlists', JSON.stringify(merged));
     return merged;
