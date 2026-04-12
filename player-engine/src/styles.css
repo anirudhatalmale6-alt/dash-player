@@ -1010,7 +1010,7 @@ body {
 .epg-grid-channel {
   width: 200px; flex-shrink: 0; display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; border-right: 1px solid rgba(200,180,220,0.15);
-  background: rgba(255,255,255,0.35); position: sticky; left: 0; z-index: 3;
+  background: var(--bg); position: sticky; left: 0; z-index: 3;
 }
 .epg-grid-channel-icon {
   width: 28px; height: 28px; border-radius: 6px;
@@ -1023,12 +1023,12 @@ body {
   background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.12);
   padding: 4px 8px; overflow: hidden; cursor: pointer;
   transition: all 0.2s; display: flex; flex-direction: column; justify-content: center;
-  min-width: 2px;
+  min-width: 2px; box-sizing: border-box;
 }
 .epg-grid-program:hover { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.25); z-index: 2; }
 .epg-grid-program.current { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.3); }
-.epg-grid-program-title { font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.epg-grid-program-time { font-size: 9px; color: var(--text-muted); margin-top: 1px; }
+.epg-grid-program-title { font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.epg-grid-program-time { font-size: 9px; color: var(--text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .epg-now-line {
   position: absolute; top: 0; bottom: 0; width: 2px;
   background: var(--red); z-index: 4;
