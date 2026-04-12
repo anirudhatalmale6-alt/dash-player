@@ -103,7 +103,7 @@ function ActivationScreen({ onActivated }) {
   const [password, setPassword] = useState('');
   const [connectError, setConnectError] = useState('');
   const [m3uInput, setM3uInput] = useState('');
-  const panelUrl = 'https://panel.dashplayer.tv';
+  const panelUrl = 'https://dashplayer.eu';
 
   const copyToClipboard = (text, field) => {
     navigator.clipboard.writeText(text).catch(() => {});
@@ -1443,7 +1443,7 @@ function SettingsScreen({ onBack, api }) {
                 <h2 className="settings-about-name">Dash Player</h2>
                 <p className="settings-about-version">Version 2.0.0</p>
                 <p className="settings-card-desc" style={{ marginTop: 16 }}>Multi-platform IPTV player with Xtream Codes support. Live TV, Movies, Series, Radio, EPG, Catch Up, Multi-Screen.</p>
-                <div className="settings-about-links"><span>Support: panel.dashplayer.tv</span></div>
+                <div className="settings-about-links"><span>Support: dashplayer.eu</span></div>
               </div>
             </div>
           )}
@@ -1456,7 +1456,7 @@ function SettingsScreen({ onBack, api }) {
 /* ══════ TRIAL EXPIRED SCREEN ══════ */
 function TrialExpiredScreen() {
   const [device] = useState(() => getDeviceIdentity());
-  const panelUrl = 'https://panel.dashplayer.tv';
+  const panelUrl = 'https://dashplayer.eu';
   return (
     <div className="activation-screen">
       <div className="activation-container">
