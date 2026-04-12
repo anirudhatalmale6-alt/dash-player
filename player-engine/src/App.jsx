@@ -771,7 +771,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
     }
   }, []);
 
-  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; cleanup(); if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current.load(); } }; }, []);
 
   useEffect(() => {
     if (!url || !videoRef.current) return;
@@ -970,7 +970,8 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
     return () => clearInterval(interval);
   }, []);
 
-  const formatDate = (d) => d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+  const dateLocale = getCurrentLanguage() === 'nl' ? 'nl-NL' : getCurrentLanguage() === 'tr' ? 'tr-TR' : 'en-US';
+  const formatDate = (d) => d.toLocaleDateString(dateLocale, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
   const greeting = () => {
     const h = time.getHours();
     if (h < 12) return t('greeting_morning');
