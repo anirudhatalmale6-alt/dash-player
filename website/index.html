@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css?v=2.3">
+  <link rel="stylesheet" href="style.css?v=2.4">
 </head>
 <body>
 
@@ -204,10 +204,22 @@
         <!-- Device Lookup -->
         <div class="card card-form" id="playlistLookup">
           <h3><i class="fas fa-search"></i> Find Your Device</h3>
-          <form id="playlistLookupForm" class="form-inline-group">
-            <div class="input-group">
-              <span class="input-icon"><i class="fas fa-fingerprint"></i></span>
-              <input type="text" id="playlistMac" placeholder="Enter MAC Address or Device Key" required>
+          <form id="playlistLookupForm">
+            <div class="form-grid form-grid-2">
+              <div class="form-group">
+                <label for="playlistMac">MAC Address</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-fingerprint"></i></span>
+                  <input type="text" id="playlistMac" placeholder="e.g. 0F:71:82:41:E6:DE" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="playlistDeviceKey">Device Key</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-key"></i></span>
+                  <input type="text" id="playlistDeviceKey" placeholder="Enter Device Key" required>
+                </div>
+              </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="fas fa-arrow-right"></i> Look Up</button>
           </form>
@@ -291,10 +303,22 @@
         <!-- Device Lookup -->
         <div class="card card-form" id="activateLookup">
           <h3><i class="fas fa-search"></i> Check Device Status</h3>
-          <form id="activateLookupForm" class="form-inline-group">
-            <div class="input-group">
-              <span class="input-icon"><i class="fas fa-fingerprint"></i></span>
-              <input type="text" id="activateMac" placeholder="Enter MAC Address" required>
+          <form id="activateLookupForm">
+            <div class="form-grid form-grid-2">
+              <div class="form-group">
+                <label for="activateMac">MAC Address</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-fingerprint"></i></span>
+                  <input type="text" id="activateMac" placeholder="e.g. 0F:71:82:41:E6:DE" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="activateDeviceKey">Device Key</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-key"></i></span>
+                  <input type="text" id="activateDeviceKey" placeholder="Enter Device Key" required>
+                </div>
+              </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="fas fa-arrow-right"></i> Check Status</button>
           </form>
@@ -457,6 +481,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=2.3"></script>
+  <script src="app.js?v=2.4"></script>
 </body>
 </html>

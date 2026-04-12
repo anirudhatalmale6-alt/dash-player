@@ -7,7 +7,9 @@ const API_BASE = '/api';
 
 // ---- State ----
 let currentPlaylistMac = '';
+let currentPlaylistKey = '';
 let currentActivateMac = '';
+let currentActivateKey = '';
 let devicePlaylists = [];
 
 // ---- DOM Ready ----
@@ -83,9 +85,11 @@ function initPlaylistPage() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const mac = document.getElementById('playlistMac').value.trim();
-    if (!mac) return;
+    const key = document.getElementById('playlistDeviceKey').value.trim();
+    if (!mac || !key) return;
     currentPlaylistMac = mac;
-    await lookupPlaylistDevice(mac);
+    currentPlaylistKey = key;
+    await lookupPlaylistDevice(mac, key);
   });
 
   const addForm = document.getElementById('addPlaylistForm');
@@ -95,7 +99,7 @@ function initPlaylistPage() {
   });
 }
 
-async function lookupPlaylistDevice(mac) {
+async function lookupPlaylistDevice(mac, key) {
   showEl('playlistLookupLoading');
   hideEl('playlistLookupError');
   hideEl('playlistDeviceInfo');
@@ -103,7 +107,7 @@ async function lookupPlaylistDevice(mac) {
   hideEl('currentPlaylists');
 
   try {
-    const data = await apiPost('/device/lookup', { mac_address: mac });
+    const data = await apiPost('/device/lookup', { mac_address: mac, device_key: key });
 
     // Show device info
     renderDeviceInfo('playlistDeviceDetails', 'playlistDeviceStatus', data.device);
@@ -125,7 +129,7 @@ async function lookupPlaylistDevice(mac) {
 
 async function reloadPlaylists() {
   try {
-    const data = await apiPost('/device/lookup', { mac_address: currentPlaylistMac });
+    const data = await apiPost('/device/lookup', { mac_address: currentPlaylistMac, device_key: currentPlaylistKey });
     devicePlaylists = Array.isArray(data.playlists) ? data.playlists : [];
     renderPlaylists();
   } catch (err) {
@@ -176,6 +180,7 @@ async function addPlaylist() {
   try {
     await apiPost('/device/playlists', {
       mac_address: currentPlaylistMac,
+      device_key: currentPlaylistKey,
       server_url: serverUrl,
       username: username,
       password: password
@@ -201,7 +206,7 @@ async function deletePlaylist(playlistId) {
   if (!confirm('Are you sure you want to delete this playlist?')) return;
 
   try {
-    await apiDelete(`/device/playlists/${playlistId}`, { mac_address: currentPlaylistMac });
+    await apiDelete(`/device/playlists/${playlistId}`, { mac_address: currentPlaylistMac, device_key: currentPlaylistKey });
     await reloadPlaylists();
   } catch (err) {
     alert('Failed to delete playlist: ' + (err.message || 'Unknown error'));
@@ -210,7 +215,7 @@ async function deletePlaylist(playlistId) {
 
 async function setDefaultPlaylist(playlistId) {
   try {
-    await apiPost(`/device/playlists/${playlistId}/default`, { mac_address: currentPlaylistMac });
+    await apiPost(`/device/playlists/${playlistId}/default`, { mac_address: currentPlaylistMac, device_key: currentPlaylistKey });
     await reloadPlaylists();
   } catch (err) {
     alert('Failed to set default: ' + (err.message || 'Unknown error'));
@@ -224,20 +229,22 @@ function initActivatePage() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const mac = document.getElementById('activateMac').value.trim();
-    if (!mac) return;
+    const key = document.getElementById('activateDeviceKey').value.trim();
+    if (!mac || !key) return;
     currentActivateMac = mac;
-    await lookupActivateDevice(mac);
+    currentActivateKey = key;
+    await lookupActivateDevice(mac, key);
   });
 }
 
-async function lookupActivateDevice(mac) {
+async function lookupActivateDevice(mac, key) {
   showEl('activateLookupLoading');
   hideEl('activateLookupError');
   hideEl('activateDeviceInfo');
   hideEl('packagesSection');
 
   try {
-    const data = await apiPost('/device/lookup', { mac_address: mac });
+    const data = await apiPost('/device/lookup', { mac_address: mac, device_key: key });
 
     renderDeviceInfo('activateDeviceDetails', 'activateDeviceStatus', data.device);
     showEl('activateDeviceInfo');

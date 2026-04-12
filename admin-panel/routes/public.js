@@ -2,13 +2,30 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// Lookup device by MAC address (public)
+// Lookup device by MAC address + device key (public)
 router.post('/device/lookup', (req, res) => {
-  const { mac_address } = req.body;
-  if (!mac_address) return res.status(400).json({ error: 'mac_address required' });
+  const { mac_address, device_key } = req.body;
+  if (!mac_address || !device_key) return res.status(400).json({ error: 'MAC address and Device Key are required' });
 
-  const device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at FROM devices WHERE mac_address = ?').get(mac_address);
-  if (!device) return res.status(404).json({ error: 'Device not found. Please activate your device in the player first.' });
+  let device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
+
+  // Auto-register as trial device if not found
+  if (!device) {
+    // Check if MAC exists with different key
+    const existingMac = db.prepare('SELECT id FROM devices WHERE mac_address = ?').get(mac_address);
+    if (existingMac) return res.status(403).json({ error: 'Invalid Device Key for this MAC address.' });
+
+    // Check if key exists with different MAC
+    const existingKey = db.prepare('SELECT id FROM devices WHERE device_key = ?').get(device_key);
+    if (existingKey) return res.status(403).json({ error: 'This Device Key is already registered to another MAC address.' });
+
+    // Create new trial device
+    const result = db.prepare(
+      'INSERT INTO devices (mac_address, device_key, name, status, license_type) VALUES (?, ?, ?, ?, ?)'
+    ).run(mac_address, device_key, '', 'active', 'trial');
+
+    device = db.prepare('SELECT id, mac_address, device_key, name, status, license_type, license_expires_at, created_at FROM devices WHERE id = ?').get(result.lastInsertRowid);
+  }
 
   // Check license validity
   let licenseValid = true;
@@ -39,15 +56,15 @@ router.post('/device/lookup', (req, res) => {
   });
 });
 
-// Add playlist to device (public, requires MAC)
+// Add playlist to device (public, requires MAC + device_key)
 router.post('/device/playlists', (req, res) => {
-  const { mac_address, name, server_url, username, password } = req.body;
-  if (!mac_address || !server_url || !username || !password) {
-    return res.status(400).json({ error: 'mac_address, server_url, username, and password are required' });
+  const { mac_address, device_key, name, server_url, username, password } = req.body;
+  if (!mac_address || !device_key || !server_url || !username || !password) {
+    return res.status(400).json({ error: 'mac_address, device_key, server_url, username, and password are required' });
   }
 
-  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ?').get(mac_address);
-  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
+  if (!device) return res.status(404).json({ error: 'Device not found or invalid key' });
 
   const existingCount = db.prepare('SELECT COUNT(*) as count FROM playlists WHERE device_id = ?').get(device.id).count;
   const isDefault = existingCount === 0 ? 1 : 0;
@@ -66,11 +83,11 @@ router.post('/device/playlists', (req, res) => {
 
 // Update playlist
 router.put('/device/playlists/:id', (req, res) => {
-  const { mac_address, name, server_url, username, password } = req.body;
-  if (!mac_address) return res.status(400).json({ error: 'mac_address required' });
+  const { mac_address, device_key, name, server_url, username, password } = req.body;
+  if (!mac_address || !device_key) return res.status(400).json({ error: 'mac_address and device_key required' });
 
-  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ?').get(mac_address);
-  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
+  if (!device) return res.status(404).json({ error: 'Device not found or invalid key' });
 
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ? AND device_id = ?').get(req.params.id, device.id);
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
@@ -91,11 +108,11 @@ router.put('/device/playlists/:id', (req, res) => {
 
 // Delete playlist
 router.delete('/device/playlists/:id', (req, res) => {
-  const { mac_address } = req.body;
-  if (!mac_address) return res.status(400).json({ error: 'mac_address required' });
+  const { mac_address, device_key } = req.body;
+  if (!mac_address || !device_key) return res.status(400).json({ error: 'mac_address and device_key required' });
 
-  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ?').get(mac_address);
-  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
+  if (!device) return res.status(404).json({ error: 'Device not found or invalid key' });
 
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ? AND device_id = ?').get(req.params.id, device.id);
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
@@ -121,11 +138,11 @@ router.delete('/device/playlists/:id', (req, res) => {
 
 // Set playlist as default
 router.post('/device/playlists/:id/default', (req, res) => {
-  const { mac_address } = req.body;
-  if (!mac_address) return res.status(400).json({ error: 'mac_address required' });
+  const { mac_address, device_key } = req.body;
+  if (!mac_address || !device_key) return res.status(400).json({ error: 'mac_address and device_key required' });
 
-  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ?').get(mac_address);
-  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const device = db.prepare('SELECT id FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
+  if (!device) return res.status(404).json({ error: 'Device not found or invalid key' });
 
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ? AND device_id = ?').get(req.params.id, device.id);
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' });

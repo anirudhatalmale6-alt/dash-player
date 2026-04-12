@@ -542,6 +542,10 @@ img {
   margin-bottom: 1.25rem;
 }
 
+.form-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
