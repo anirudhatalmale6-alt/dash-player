@@ -34,6 +34,59 @@ const TRANSLATIONS = {
     add_playlist: 'Add Playlist',
     refresh: 'Refresh',
     language: 'Language',
+    home: 'Home',
+    back: 'Back',
+    search_channels: 'Search channels...',
+    search_movies: 'Search movies...',
+    search_series: 'Search series...',
+    search_stations: 'Search stations...',
+    search_catchup: 'Search catch-up...',
+    search_all: 'Search channels, movies, series...',
+    loading: 'Loading...',
+    loading_channels: 'Loading channels...',
+    loading_radio: 'Loading radio stations...',
+    loading_catchup: 'Loading catch-up channels...',
+    no_results: 'No results for',
+    start_test: 'Start Test',
+    test_again: 'Test Again',
+    testing: 'Testing...',
+    download: 'Download',
+    ping: 'Ping',
+    data_downloaded: 'Data Downloaded',
+    status: 'Status',
+    connected: 'Connected',
+    vpn_status: 'VPN Status',
+    vpn_server: 'VPN Server',
+    your_ip: 'Your IP',
+    vpn_ip: 'VPN IP',
+    hostname_isp: 'Hostname / ISP',
+    location: 'Location',
+    refresh_ip: 'Refresh IP Info',
+    enabled: 'ENABLED',
+    disabled: 'DISABLED',
+    checking: 'Checking...',
+    unknown: 'Unknown',
+    recently_watched: 'Recently Watched',
+    movie: 'Movie',
+    account: 'Account',
+    parental_control: 'Parental Control',
+    vpn: 'VPN',
+    device_info: 'Device Info',
+    about: 'About',
+    add_channel: 'Add Channel',
+    select_channel: 'Select Channel for Screen',
+    close: 'Close',
+    no_radio: 'No Radio Streams',
+    no_radio_desc: 'This server does not have radio categories available.',
+    no_catchup: 'No catch-up channels in this category',
+    catchup_channels: 'channels with catch-up',
+    custom_groups: 'Custom Groups',
+    no_history: 'No watch history yet',
+    default_sort: 'Default',
+    sort_az: 'A-Z',
+    sort_number: 'By Number',
+    sort_rating: 'Rating',
+    no_playlists_yet: 'No playlists configured yet. Add one above to get started.',
   },
   nl: {
     greeting_morning: 'Goedemorgen',
@@ -61,6 +114,59 @@ const TRANSLATIONS = {
     add_playlist: 'Afspeellijst toevoegen',
     refresh: 'Vernieuwen',
     language: 'Taal',
+    home: 'Startpagina',
+    back: 'Terug',
+    search_channels: 'Kanalen zoeken...',
+    search_movies: 'Films zoeken...',
+    search_series: 'Series zoeken...',
+    search_stations: 'Stations zoeken...',
+    search_catchup: 'Terugkijken zoeken...',
+    search_all: 'Zoek kanalen, films, series...',
+    loading: 'Laden...',
+    loading_channels: 'Kanalen laden...',
+    loading_radio: 'Radiostations laden...',
+    loading_catchup: 'Terugkijk-kanalen laden...',
+    no_results: 'Geen resultaten voor',
+    start_test: 'Test starten',
+    test_again: 'Opnieuw testen',
+    testing: 'Testen...',
+    download: 'Download',
+    ping: 'Ping',
+    data_downloaded: 'Data gedownload',
+    status: 'Status',
+    connected: 'Verbonden',
+    vpn_status: 'VPN Status',
+    vpn_server: 'VPN Server',
+    your_ip: 'Uw IP',
+    vpn_ip: 'VPN IP',
+    hostname_isp: 'Hostname / ISP',
+    location: 'Locatie',
+    refresh_ip: 'IP-info vernieuwen',
+    enabled: 'INGESCHAKELD',
+    disabled: 'UITGESCHAKELD',
+    checking: 'Controleren...',
+    unknown: 'Onbekend',
+    recently_watched: 'Recent bekeken',
+    movie: 'Film',
+    account: 'Account',
+    parental_control: 'Ouderlijk toezicht',
+    vpn: 'VPN',
+    device_info: 'Apparaatinfo',
+    about: 'Over',
+    add_channel: 'Kanaal toevoegen',
+    select_channel: 'Selecteer kanaal voor scherm',
+    close: 'Sluiten',
+    no_radio: 'Geen radiostations',
+    no_radio_desc: 'Deze server heeft geen radiocategorieen beschikbaar.',
+    no_catchup: 'Geen terugkijk-kanalen in deze categorie',
+    catchup_channels: 'kanalen met terugkijken',
+    custom_groups: 'Aangepaste groepen',
+    no_history: 'Nog geen kijkgeschiedenis',
+    default_sort: 'Standaard',
+    sort_az: 'A-Z',
+    sort_number: 'Op nummer',
+    sort_rating: 'Beoordeling',
+    no_playlists_yet: 'Nog geen afspeellijsten. Voeg er hierboven een toe om te beginnen.',
   },
   tr: {
     greeting_morning: 'Gunaydin',
@@ -88,6 +194,59 @@ const TRANSLATIONS = {
     add_playlist: 'Oynatma Listesi Ekle',
     refresh: 'Yenile',
     language: 'Dil',
+    home: 'Ana Sayfa',
+    back: 'Geri',
+    search_channels: 'Kanal ara...',
+    search_movies: 'Film ara...',
+    search_series: 'Dizi ara...',
+    search_stations: 'Istasyon ara...',
+    search_catchup: 'Tekrar izle ara...',
+    search_all: 'Kanal, film, dizi ara...',
+    loading: 'Yukleniyor...',
+    loading_channels: 'Kanallar yukleniyor...',
+    loading_radio: 'Radyo istasyonlari yukleniyor...',
+    loading_catchup: 'Tekrar izle kanallari yukleniyor...',
+    no_results: 'Sonuc bulunamadi:',
+    start_test: 'Testi Baslat',
+    test_again: 'Tekrar Test Et',
+    testing: 'Test ediliyor...',
+    download: 'Indirme',
+    ping: 'Ping',
+    data_downloaded: 'Indirilen veri',
+    status: 'Durum',
+    connected: 'Bagli',
+    vpn_status: 'VPN Durumu',
+    vpn_server: 'VPN Sunucusu',
+    your_ip: 'IP Adresiniz',
+    vpn_ip: 'VPN IP',
+    hostname_isp: 'Ana Bilgisayar / ISS',
+    location: 'Konum',
+    refresh_ip: 'IP Bilgisini Yenile',
+    enabled: 'ETKIN',
+    disabled: 'DEVRE DISI',
+    checking: 'Kontrol ediliyor...',
+    unknown: 'Bilinmiyor',
+    recently_watched: 'Son Izlenenler',
+    movie: 'Film',
+    account: 'Hesap',
+    parental_control: 'Ebeveyn Kontrolu',
+    vpn: 'VPN',
+    device_info: 'Cihaz Bilgisi',
+    about: 'Hakkinda',
+    add_channel: 'Kanal Ekle',
+    select_channel: 'Ekran icin kanal sec',
+    close: 'Kapat',
+    no_radio: 'Radyo Yayini Yok',
+    no_radio_desc: 'Bu sunucuda radyo kategorisi bulunmamaktadir.',
+    no_catchup: 'Bu kategoride tekrar izle kanali yok',
+    catchup_channels: 'tekrar izle kanali',
+    custom_groups: 'Ozel Gruplar',
+    no_history: 'Henuz izleme gecmisi yok',
+    default_sort: 'Varsayilan',
+    sort_az: 'A-Z',
+    sort_number: 'Numaraya Gore',
+    sort_rating: 'Puan',
+    no_playlists_yet: 'Henuz oynatma listesi yok. Baslamak icin yukaridan bir tane ekleyin.',
   }
 };
 
@@ -164,10 +323,8 @@ async function fetchPlaylistsFromBackend() {
     const apiBase = 'https://management.dashplayer.eu/api';
     const res = await axios.post(`${apiBase}/device/lookup`, { mac_address: device.mac, device_key: device.key });
     const backendPlaylists = res.data?.playlists || [];
-    if (backendPlaylists.length === 0) return getPlaylists();
-    // Normalize URL for comparison (strip trailing slash)
-    const normUrl = (u) => (u || '').replace(/\/+$/, '').toLowerCase();
-    // Use backend as source of truth, merge in any local-only playlists
+    // Backend is the ONLY source of truth - if backend returns empty, playlists are empty
+    // This ensures hard reset and playlist deletion from admin/website work correctly
     const merged = backendPlaylists.map(bp => ({
       id: bp.id || Date.now() + Math.random(),
       name: bp.name || 'My Playlist',
@@ -178,14 +335,6 @@ async function fetchPlaylistsFromBackend() {
       is_default: bp.is_default === 1 || bp.is_default === true,
       pin: bp.pin || '',
     }));
-    // Add local-only playlists that don't exist in backend
-    const localPlaylists = getPlaylists();
-    for (const lp of localPlaylists) {
-      const existsInBackend = backendPlaylists.find(bp => normUrl(bp.server_url) === normUrl(lp.server_url) && bp.username === lp.username);
-      if (!existsInBackend) {
-        merged.push({ ...lp, is_default: false });
-      }
-    }
     // Ensure one default
     if (merged.length > 0 && !merged.find(p => p.is_default)) {
       merged[0].is_default = true;
@@ -694,7 +843,7 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
           <div className="home-clock-date">{formatDate(time)}</div>
         </div>
         <div className="home-topbar-actions">
-          <button className="home-search-btn" onClick={() => onNavigate('search')}>&#128269; Search</button>
+          <button className="home-search-btn" onClick={() => onNavigate('search')}>&#128269; {t('search')}</button>
           <button className="home-notification-btn" onClick={() => onNavigate('multiscreen')} title="Multi Screen">
             &#9638;
             <div className="home-notification-dot" style={{display:'none'}} />
@@ -714,22 +863,22 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
           <div className="home-stat" onClick={() => onNavigate('live')}>
             <div className="home-stat-icon">&#128250;</div>
             <div className="home-stat-value">{contentStats.live || 0}</div>
-            <div className="home-stat-label">Live Channels</div>
+            <div className="home-stat-label">{t('live_channels')}</div>
           </div>
           <div className="home-stat" onClick={() => onNavigate('vod')}>
             <div className="home-stat-icon">&#127910;</div>
             <div className="home-stat-value">{contentStats.vod || 0}</div>
-            <div className="home-stat-label">Movies</div>
+            <div className="home-stat-label">{t('movies').toUpperCase()}</div>
           </div>
           <div className="home-stat" onClick={() => onNavigate('series')}>
             <div className="home-stat-icon">&#127916;</div>
             <div className="home-stat-value">{contentStats.series || 0}</div>
-            <div className="home-stat-label">Series</div>
+            <div className="home-stat-label">{t('series').toUpperCase()}</div>
           </div>
           <div className="home-stat" onClick={() => onNavigate('favorites')}>
             <div className="home-stat-icon">&#9733;</div>
             <div className="home-stat-value">{getFavorites('live').length + getFavorites('vod').length + getFavorites('series').length}</div>
-            <div className="home-stat-label">Favorites</div>
+            <div className="home-stat-label">{t('favorites').toUpperCase()}</div>
           </div>
         </div>
 
@@ -792,7 +941,7 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
         {/* Recently Watched */}
         {history.length > 0 && (
           <div className="home-recently">
-            <div className="home-section-title">Recently Watched</div>
+            <div className="home-section-title">{t('recently_watched')}</div>
             <div className="home-recently-scroll">
               {history.slice(0, 12).map(item => (
                 <div key={item.id} className="home-recently-card" onClick={() => {
@@ -805,7 +954,7 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
                   </div>
                   <div className="home-recently-info">
                     <div className="home-recently-name">{item.name}</div>
-                    <div className="home-recently-meta">{item.type === 'live' ? 'Live TV' : item.type === 'vod' ? 'Movie' : 'Series'}</div>
+                    <div className="home-recently-meta">{item.type === 'live' ? t('live_tv') : item.type === 'vod' ? t('movie') : t('series')}</div>
                   </div>
                 </div>
               ))}
@@ -918,22 +1067,22 @@ function LiveTVScreen({ onBack, api }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Live TV</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('live_tv')}</h1>
         <div className="section-header-right">
-          <button className={`header-filter-btn ${showFavsOnly ? 'active' : ''}`} onClick={() => setShowFavsOnly(!showFavsOnly)} title="Favorites only">&#9733;</button>
+          <button className={`header-filter-btn ${showFavsOnly ? 'active' : ''}`} onClick={() => setShowFavsOnly(!showFavsOnly)} title={t('favorites')}>&#9733;</button>
           <select className="header-sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
-            <option value="default">Default</option>
-            <option value="name">A-Z</option>
-            <option value="num">By Number</option>
+            <option value="default">{t('default_sort')}</option>
+            <option value="name">{t('sort_az')}</option>
+            <option value="num">{t('sort_number')}</option>
           </select>
-          <span className="channel-count">{filtered.length} channels</span>
+          <span className="channel-count">{filtered.length} {t('channels')}</span>
         </div>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
           <div className="sidebar-search">
-            <input placeholder="Search channels..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <input placeholder={t('search_channels')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
           </div>
           <div className="sidebar-categories">
             {categories.map(cat => (
@@ -947,7 +1096,7 @@ function LiveTVScreen({ onBack, api }) {
         {!playingChannel ? (
           <>
             <div className="section-channel-list">
-              {(loading || channelLoading) && <div className="loading-indicator">Loading channels...</div>}
+              {(loading || channelLoading) && <div className="loading-indicator">{t('loading_channels')}</div>}
               {!loading && !channelLoading && filtered.map(ch => (
                 <div key={ch.stream_id} className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
                   onClick={() => { setSelectedChannel(ch); setPlayingChannel(ch); addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon }); }}>
@@ -1068,7 +1217,7 @@ function LiveTVScreen({ onBack, api }) {
 /* ══════ MEDIA SCREEN (Movies / Series) ══════ */
 function MediaScreen({ type, onBack, api }) {
   const isVod = type === 'vod';
-  const title = isVod ? 'Movies' : 'Series';
+  const title = isVod ? t('movies') : t('series');
   const [categories, setCategories] = useState([]);
   const [allItems, setAllItems] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -1242,22 +1391,22 @@ function MediaScreen({ type, onBack, api }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
         <h1 className="section-title">{title}</h1>
         <div className="section-header-right">
-          <button className={`header-filter-btn ${showFavsOnly ? 'active' : ''}`} onClick={() => setShowFavsOnly(!showFavsOnly)} title="Favorites only">&#9733;</button>
+          <button className={`header-filter-btn ${showFavsOnly ? 'active' : ''}`} onClick={() => setShowFavsOnly(!showFavsOnly)} title={t('favorites')}>&#9733;</button>
           <select className="header-sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
-            <option value="default">Default</option>
-            <option value="name">A-Z</option>
-            <option value="rating">Rating</option>
+            <option value="default">{t('default_sort')}</option>
+            <option value="name">{t('sort_az')}</option>
+            <option value="rating">{t('sort_rating')}</option>
           </select>
-          <span className="channel-count">{filtered.length} titles</span>
+          <span className="channel-count">{filtered.length} {t('titles')}</span>
         </div>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
           <div className="sidebar-search">
-            <input placeholder={`Search ${title.toLowerCase()}...`} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <input placeholder={isVod ? t('search_movies') : t('search_series')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
           </div>
           <div className="sidebar-categories">
             {categories.map(cat => (
@@ -1387,13 +1536,13 @@ function RadioScreen({ onBack, api }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
         <h1 className="section-title">{t('radio')}</h1>
         <div className="section-header-right"><span className="channel-count">{filtered.length} {t('stations')}</span></div>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
-          <div className="sidebar-search"><input placeholder="Search stations..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
+          <div className="sidebar-search"><input placeholder={t('search_stations')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
           <div className="sidebar-categories">
             {apiCategories.map(cat => (
               <div key={cat.category_id} className={`sidebar-cat-item ${String(selectedCat) === String(cat.category_id) ? 'active' : ''}`} onClick={() => setSelectedCat(cat.category_id)}>
@@ -1404,12 +1553,12 @@ function RadioScreen({ onBack, api }) {
           </div>
         </div>
         <div className="radio-grid">
-          {loading && <div className="loading-indicator" style={{ gridColumn: '1/-1' }}>Loading radio stations...</div>}
+          {loading && <div className="loading-indicator" style={{ gridColumn: '1/-1' }}>{t('loading_radio')}</div>}
           {!loading && apiStations.length === 0 && (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px 20px', opacity: 0.6 }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>&#127911;</div>
-              <h3>No Radio Streams</h3>
-              <p>This server does not have radio categories available.</p>
+              <h3>{t('no_radio')}</h3>
+              <p>{t('no_radio_desc')}</p>
             </div>
           )}
           {!loading && filtered.map(station => (
@@ -1540,19 +1689,19 @@ function SettingsScreen({ onBack, api }) {
   };
 
   const tabs = [
-    { id: 'account', label: 'Account', icon: '\u{1F464}' },
-    { id: 'parental', label: 'Parental Control', icon: '\u{1F512}' },
+    { id: 'account', label: t('account'), icon: '\u{1F464}' },
+    { id: 'parental', label: t('parental_control'), icon: '\u{1F512}' },
     { id: 'language', label: t('language'), icon: '\uD83C\uDF0D' },
-    { id: 'vpn', label: 'VPN', icon: '\u{1F6E1}' },
-    { id: 'device', label: 'Device Info', icon: '\u{1F4F1}' },
-    { id: 'about', label: 'About', icon: '\u{2139}' },
+    { id: 'vpn', label: t('vpn'), icon: '\u{1F6E1}' },
+    { id: 'device', label: t('device_info'), icon: '\u{1F4F1}' },
+    { id: 'about', label: t('about'), icon: '\u{2139}' },
   ];
 
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Settings</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('settings')}</h1>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
@@ -1985,8 +2134,8 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Playlists</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('playlists')}</h1>
         <button className="settings-btn settings-btn-secondary" onClick={async () => {
           const merged = await fetchPlaylistsFromBackend();
           if (merged) setPlaylists(merged);
@@ -1994,7 +2143,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
           {t('refresh')}
         </button>
         <button className="settings-btn settings-btn-primary" onClick={() => { resetForm(); setShowAdd(true); }} style={{ marginLeft: 8 }}>
-          + Add Playlist
+          + {t('add_playlist')}
         </button>
       </div>
       <div className="playlists-content" style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
@@ -2227,8 +2376,8 @@ function SpeedTestScreen({ onBack }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Speed Test</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('speed_test')}</h1>
       </div>
       <div style={{ padding: '40px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32, overflowY: 'auto', flex: 1 }}>
         {/* Gauge area */}
@@ -2248,14 +2397,14 @@ function SpeedTestScreen({ onBack }) {
             {testing ? `${progress}%` : results ? `${results.download}` : '0'}
           </div>
           <div className="speedtest-gauge-unit">
-            {testing ? 'Testing...' : results ? 'Mbps' : 'Mbps'}
+            {testing ? t('testing') : results ? 'Mbps' : 'Mbps'}
           </div>
         </div>
 
         {/* Start button */}
         {!testing && !results && (
           <button className="settings-btn settings-btn-primary speedtest-start-btn" onClick={runSpeedTest}>
-            &#128640; Start Test
+            &#128640; {t('start_test')}
           </button>
         )}
 
@@ -2275,22 +2424,22 @@ function SpeedTestScreen({ onBack }) {
             <div className="speedtest-result-card">
               <div className="speedtest-result-icon">&#128640;</div>
               <div className="speedtest-result-value">{results.download}</div>
-              <div className="speedtest-result-label">Download (Mbps)</div>
+              <div className="speedtest-result-label">{t('download')} (Mbps)</div>
             </div>
             <div className="speedtest-result-card">
               <div className="speedtest-result-icon">&#9201;</div>
               <div className="speedtest-result-value">{results.ping}</div>
-              <div className="speedtest-result-label">Ping (ms)</div>
+              <div className="speedtest-result-label">{t('ping')} (ms)</div>
             </div>
             <div className="speedtest-result-card">
               <div className="speedtest-result-icon">&#128230;</div>
               <div className="speedtest-result-value">{formatBytes(results.bytes)}</div>
-              <div className="speedtest-result-label">Data Downloaded</div>
+              <div className="speedtest-result-label">{t('data_downloaded')}</div>
             </div>
             <div className="speedtest-result-card">
               <div className="speedtest-result-icon">&#9989;</div>
-              <div className="speedtest-result-value" style={{ color: '#10b981' }}>Connected</div>
-              <div className="speedtest-result-label">Status</div>
+              <div className="speedtest-result-value" style={{ color: '#10b981' }}>{t('connected')}</div>
+              <div className="speedtest-result-label">{t('status')}</div>
             </div>
           </div>
         )}
@@ -2298,43 +2447,43 @@ function SpeedTestScreen({ onBack }) {
         {/* Retest */}
         {results && (
           <button className="settings-btn settings-btn-secondary" onClick={runSpeedTest}>
-            &#128260; Test Again
+            &#128260; {t('test_again')}
           </button>
         )}
 
         {/* Connection Info */}
         <div className="speedtest-connection-info">
           <div className="speedtest-info-row" style={{ borderBottom: '1px solid rgba(200,180,220,0.15)', paddingBottom: 10 }}>
-            <span className="speedtest-info-label">VPN Status</span>
+            <span className="speedtest-info-label">{t('vpn_status')}</span>
             <span className={`settings-badge ${vpnEnabled ? 'active' : 'inactive'}`}>
-              {vpnEnabled ? 'ENABLED' : 'DISABLED'}
+              {vpnEnabled ? t('enabled') : t('disabled')}
             </span>
           </div>
           {vpnEnabled && vpnServer && (
             <div className="speedtest-info-row">
-              <span className="speedtest-info-label">VPN Server</span>
+              <span className="speedtest-info-label">{t('vpn_server')}</span>
               <span className="speedtest-info-value">{vpnServer}</span>
             </div>
           )}
           <div className="speedtest-info-row">
-            <span className="speedtest-info-label">{vpnEnabled ? 'VPN IP' : 'Your IP'}</span>
-            <span className="speedtest-info-value">{ipLoading ? 'Checking...' : ipInfo ? ipInfo.ip : 'Unknown'}</span>
+            <span className="speedtest-info-label">{vpnEnabled ? t('vpn_ip') : t('your_ip')}</span>
+            <span className="speedtest-info-value">{ipLoading ? t('checking') : ipInfo ? ipInfo.ip : t('unknown')}</span>
           </div>
           {ipInfo && (ipInfo.hostname || ipInfo.org) && (
             <div className="speedtest-info-row">
-              <span className="speedtest-info-label">Hostname / ISP</span>
+              <span className="speedtest-info-label">{t('hostname_isp')}</span>
               <span className="speedtest-info-value">{ipInfo.hostname || ipInfo.org || 'N/A'}</span>
             </div>
           )}
           {ipInfo && (
             <div className="speedtest-info-row">
-              <span className="speedtest-info-label">Location</span>
+              <span className="speedtest-info-label">{t('location')}</span>
               <span className="speedtest-info-value">{[ipInfo.city, ipInfo.region, ipInfo.country].filter(Boolean).join(', ')}</span>
             </div>
           )}
           <div style={{ textAlign: 'center', marginTop: 8 }}>
             <button className="settings-btn settings-btn-secondary" style={{ fontSize: 12, padding: '6px 16px' }} onClick={fetchIpInfo}>
-              &#128260; Refresh IP Info
+              &#128260; {t('refresh_ip')}
             </button>
           </div>
         </div>
@@ -2421,11 +2570,11 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
   }, [api, loadedFavs]);
 
   const tabs = [
-    { id: 'live', label: 'Live TV', icon: '\u{1F4FA}' },
-    { id: 'vod', label: 'Movies', icon: '\u{1F3AC}' },
-    { id: 'series', label: 'Series', icon: '\u{1F3A5}' },
-    { id: 'history', label: 'Recently Watched', icon: '\u{1F554}' },
-    { id: 'groups', label: 'Custom Groups', icon: '\u{1F4C1}' },
+    { id: 'live', label: t('live_tv'), icon: '\u{1F4FA}' },
+    { id: 'vod', label: t('movies'), icon: '\u{1F3AC}' },
+    { id: 'series', label: t('series'), icon: '\u{1F3A5}' },
+    { id: 'history', label: t('recently_watched'), icon: '\u{1F554}' },
+    { id: 'groups', label: t('custom_groups'), icon: '\u{1F4C1}' },
   ];
 
   const handleCreateGroup = () => {
@@ -2477,7 +2626,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
       <div className="epg-empty">
         <div style={{ fontSize: 48 }}>{type === 'live' ? '\u{1F4FA}' : type === 'vod' ? '\u{1F3AC}' : '\u{1F3A5}'}</div>
         <p>No {type === 'live' ? 'channel' : type === 'vod' ? 'movie' : 'series'} favorites yet</p>
-        <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>Add favorites from the {type === 'live' ? 'Live TV' : type === 'vod' ? 'Movies' : 'Series'} section</p>
+        <p style={{ fontSize: 13, color: 'var(--text-sub)', marginTop: 8 }}>{type === 'live' ? t('live_tv') : type === 'vod' ? t('movies') : t('series')}</p>
       </div>
     );
     return (
@@ -2520,8 +2669,8 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Favorites</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('favorites')}</h1>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
@@ -2542,7 +2691,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
           {activeTab === 'series' && renderFavList(seriesItems, 'series')}
           {activeTab === 'history' && (
             history.length === 0 ? (
-              <div className="epg-empty"><div style={{ fontSize: 48 }}>{'\u{1F554}'}</div><p>No watch history yet</p></div>
+              <div className="epg-empty"><div style={{ fontSize: 48 }}>{'\u{1F554}'}</div><p>{t('no_history')}</p></div>
             ) : (
               <div className="history-list">
                 {history.map(item => (
@@ -2551,7 +2700,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
                     else if (item.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(item.streamId), name: item.name });
                   }}>
                     {item.icon ? <img className="history-icon" src={item.icon} alt="" onError={e => e.target.style.display='none'} /> : null}
-                    <div className="history-info"><div className="history-name">{item.name}</div><div className="history-meta">{item.type === 'live' ? 'Live TV' : item.type === 'vod' ? 'Movie' : 'Series'} - {new Date(item.watchedAt).toLocaleDateString()}</div></div>
+                    <div className="history-info"><div className="history-name">{item.name}</div><div className="history-meta">{item.type === 'live' ? t('live_tv') : item.type === 'vod' ? t('movie') : t('series')} - {new Date(item.watchedAt).toLocaleDateString()}</div></div>
                     <span className="ep-play">&#9654;</span>
                   </div>
                 ))}
@@ -2607,7 +2756,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
                     )}
                   </div>
                   {group.channels.length === 0 ? (
-                    <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No channels in this group. Add from the Live TV, Movies, or Series tabs.</p>
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>{t('live_tv')}, {t('movies')}, {t('series')}</p>
                   ) : (
                     <div className="history-list" style={{ maxHeight: 300, overflowY: 'auto' }}>
                       {group.channels.map(ch => (
@@ -2618,7 +2767,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
                             else if (ch.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(ch.id, 'mp4'), name: ch.name });
                           }} style={{ cursor: 'pointer', flex: 1 }}>
                             <div className="history-name">{ch.name}</div>
-                            <div className="history-meta" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ch.type === 'live' ? 'Live TV' : ch.type === 'vod' ? 'Movie' : 'Series'}</div>
+                            <div className="history-meta" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ch.type === 'live' ? t('live_tv') : ch.type === 'vod' ? t('movie') : t('series')}</div>
                           </div>
                           <button className="settings-btn settings-btn-danger" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => handleRemoveFromGroup(group.id, ch.id)}>&times;</button>
                         </div>
@@ -2716,13 +2865,13 @@ function CatchUpScreen({ onBack, api }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Catch Up TV</h1>
-        <div className="section-header-right"><span className="channel-count">{filtered.length} channels with catch-up</span></div>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('catch_up')}</h1>
+        <div className="section-header-right"><span className="channel-count">{filtered.length} {t('catchup_channels')}</span></div>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
-          <div className="sidebar-search"><input placeholder="Search catch-up..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
+          <div className="sidebar-search"><input placeholder={t('search_catchup')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
           <div className="sidebar-categories">
             {categories.map(cat => (
               <div key={cat.category_id} className={`sidebar-cat-item ${String(selectedCategory) === String(cat.category_id) ? 'active' : ''}`}
@@ -2733,9 +2882,9 @@ function CatchUpScreen({ onBack, api }) {
           </div>
         </div>
         <div className="section-channel-list" style={{maxWidth: selectedChannel ? '300px' : undefined}}>
-          {(loading || channelLoading) && <div className="loading-indicator">Loading catch-up channels...</div>}
+          {(loading || channelLoading) && <div className="loading-indicator">{t('loading_catchup')}</div>}
           {!loading && !channelLoading && filtered.length === 0 && (
-            <div className="epg-empty"><div style={{ fontSize: 48 }}>&#9202;</div><p>No catch-up channels in this category</p></div>
+            <div className="epg-empty"><div style={{ fontSize: 48 }}>&#9202;</div><p>{t('no_catchup')}</p></div>
           )}
           {!loading && !channelLoading && filtered.map(ch => (
             <div key={ch.stream_id} className={`ch-item ${selectedChannel?.stream_id === ch.stream_id ? 'active' : ''}`}
@@ -2813,22 +2962,22 @@ function SearchScreen({ onBack, api }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Search</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('search')}</h1>
       </div>
       <div className="search-screen-body">
         <div className="search-input-bar">
-          <input className="search-global-input" placeholder="Search channels, movies, series..." value={query} onChange={e => handleInput(e.target.value)} autoFocus />
+          <input className="search-global-input" placeholder={t('search_all')} value={query} onChange={e => handleInput(e.target.value)} autoFocus />
         </div>
         {searching && <div className="loading-indicator">Searching...</div>}
         {!searching && query.length >= 2 && totalResults === 0 && (
-          <div className="epg-empty"><div style={{ fontSize: 48 }}>&#128269;</div><p>No results for "{query}"</p></div>
+          <div className="epg-empty"><div style={{ fontSize: 48 }}>&#128269;</div><p>{t('no_results')} "{query}"</p></div>
         )}
         {!searching && totalResults > 0 && (
           <div className="search-results">
             {results.live.length > 0 && (
               <div className="search-section">
-                <h3 className="search-section-title">Live TV ({results.live.length})</h3>
+                <h3 className="search-section-title">{t('live_tv')} ({results.live.length})</h3>
                 <div className="search-items">
                   {results.live.map(ch => (
                     <div key={ch.stream_id} className="search-result-item" onClick={() => {
@@ -2836,7 +2985,7 @@ function SearchScreen({ onBack, api }) {
                       addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon });
                     }}>
                       {ch.stream_icon ? <img className="search-result-icon" src={ch.stream_icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="search-result-letter">{ch.name?.charAt(0)}</div>}
-                      <div className="search-result-info"><div className="search-result-name">{ch.name}</div><div className="search-result-type">Live TV</div></div>
+                      <div className="search-result-info"><div className="search-result-name">{ch.name}</div><div className="search-result-type">{t('live_tv')}</div></div>
                       <span className="ep-play">&#9654;</span>
                     </div>
                   ))}
@@ -2845,7 +2994,7 @@ function SearchScreen({ onBack, api }) {
             )}
             {results.vod.length > 0 && (
               <div className="search-section">
-                <h3 className="search-section-title">Movies ({results.vod.length})</h3>
+                <h3 className="search-section-title">{t('movies')} ({results.vod.length})</h3>
                 <div className="search-items">
                   {results.vod.map(item => (
                     <div key={item.stream_id} className="search-result-item" onClick={() => {
@@ -2862,7 +3011,7 @@ function SearchScreen({ onBack, api }) {
             )}
             {results.series.length > 0 && (
               <div className="search-section">
-                <h3 className="search-section-title">Series ({results.series.length})</h3>
+                <h3 className="search-section-title">{t('series')} ({results.series.length})</h3>
                 <div className="search-items">
                   {results.series.map(item => (
                     <div key={item.series_id} className="search-result-item">
@@ -3080,8 +3229,8 @@ function EPGGridScreen({ onBack, api }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">TV Guide</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('tv_guide')}</h1>
       </div>
       <div className="section-body">
         <div className="section-sidebar">
@@ -3227,8 +3376,8 @@ function MultiScreenScreen({ onBack, api }) {
   return (
     <div className="section-screen">
       <div className="section-header">
-        <button className="back-btn" onClick={onBack}>&#8592; Home</button>
-        <h1 className="section-title">Multi Screen</h1>
+        <button className="back-btn" onClick={onBack}>&#8592; {t('home')}</button>
+        <h1 className="section-title">{t('multi_screen')}</h1>
         <div className="section-header-right">
           <button className={`header-filter-btn ${layout === 2 ? 'active' : ''}`} onClick={() => setLayout(2)} title="2 screens">2</button>
           <button className={`header-filter-btn ${layout === 4 ? 'active' : ''}`} onClick={() => setLayout(4)} title="4 screens">4</button>
@@ -3248,7 +3397,7 @@ function MultiScreenScreen({ onBack, api }) {
                 <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', cursor: 'pointer', flexDirection: 'column', gap: 8}}
                   onClick={() => openPicker(idx)}>
                   <div style={{fontSize: 36, color: 'var(--text-muted)'}}>+</div>
-                  <div style={{fontSize: 12, color: 'var(--text-muted)'}}>Add Channel</div>
+                  <div style={{fontSize: 12, color: 'var(--text-muted)'}}>{t('add_channel')}</div>
                 </div>
               )}
             </div>
@@ -3259,10 +3408,10 @@ function MultiScreenScreen({ onBack, api }) {
         {showPicker && (
           <div style={{position: 'absolute', inset: 0, background: 'rgba(248,244,248,0.97)', backdropFilter: 'blur(8px)', zIndex: 10, display: 'flex', flexDirection: 'column', padding: 20, animation: 'fadeIn 0.2s'}}>
             <div style={{display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16}}>
-              <button className="back-btn" onClick={() => setShowPicker(false)}>&#10005; Close</button>
-              <h2 style={{fontSize: 16, fontWeight: 700, color: 'var(--text)'}}>Select Channel for Screen {activeCell + 1}</h2>
+              <button className="back-btn" onClick={() => setShowPicker(false)}>&#10005; {t('close')}</button>
+              <h2 style={{fontSize: 16, fontWeight: 700, color: 'var(--text)'}}>{ t('select_channel')} {activeCell + 1}</h2>
             </div>
-            <input className="search-global-input" placeholder="Search channels..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{marginBottom: 16, maxWidth: 400}} />
+            <input className="search-global-input" placeholder={t('search_channels')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{marginBottom: 16, maxWidth: 400}} />
             {loading && <div className="loading-indicator">Loading channels...</div>}
             <div style={{flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4}}>
               {filteredChannels.map(ch => (
@@ -3353,8 +3502,8 @@ export default function App() {
     fetchPlayerLicense().then(lic => {
       if (lic) {
         setPlayerLicense(lic);
-        // Apply default_language from backend if set
-        if (lic.default_language && !localStorage.getItem('dash_language')) {
+        // Always apply default_language from admin panel
+        if (lic.default_language) {
           setCurrentLanguage(lic.default_language);
         }
       }
