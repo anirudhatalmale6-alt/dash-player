@@ -11,131 +11,145 @@ app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-accelerated-video-decode');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
-/* ══════ MPV Player Integration ══════ */
-let mpvPath = null;
-let mpvProcess = null;
-let mpvIpcPath = null;
-let mpvReady = false;
+/* ══════ FFmpeg Integration ══════ */
+let ffmpegPath = null;
+let ffmpegProcess = null;
+let localServer = null;
+let localServerPort = 0;
 let mainWindow = null;
-let pendingCommands = [];
-let commandId = 0;
-let commandCallbacks = new Map();
 
-function getMpvPath() {
-  // Check bundled mpv first (in extraResources)
-  const bundled = process.platform === 'win32'
-    ? path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'mpv', 'mpv.exe')
-    : path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'mpv', 'mpv');
-
+function findBinary(name) {
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  // Check bundled (extraResources)
+  const bundled = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'ffmpeg', name + ext);
   if (fs.existsSync(bundled)) {
-    console.log('[MPV] Found bundled:', bundled);
+    console.log(`[FFmpeg] Found bundled ${name}:`, bundled);
     return bundled;
   }
-
   // Check system PATH
-  const systemCandidates = process.platform === 'win32'
-    ? ['mpv.exe', 'C:\\mpv\\mpv.exe', 'C:\\Program Files\\mpv\\mpv.exe']
-    : ['mpv', '/usr/bin/mpv', '/usr/local/bin/mpv'];
-
-  for (const candidate of systemCandidates) {
+  const candidates = process.platform === 'win32'
+    ? [`${name}.exe`, `C:\\ffmpeg\\bin\\${name}.exe`, `C:\\Program Files\\ffmpeg\\bin\\${name}.exe`]
+    : [name, `/usr/bin/${name}`, `/usr/local/bin/${name}`];
+  for (const c of candidates) {
     try {
-      require('child_process').execFileSync(candidate, ['--version'], {
-        timeout: 3000, stdio: ['pipe', 'pipe', 'pipe']
-      });
-      console.log('[MPV] Found system:', candidate);
-      return candidate;
+      require('child_process').execFileSync(c, ['-version'], { timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] });
+      console.log(`[FFmpeg] Found system ${name}:`, c);
+      return c;
     } catch (e) { /* not found */ }
   }
-
-  console.log('[MPV] Not found');
+  console.log(`[FFmpeg] ${name} not found`);
   return null;
 }
 
-// Send command to mpv via JSON IPC
-function mpvCommand(args) {
-  return new Promise((resolve, reject) => {
-    if (!mpvProcess || !mpvReady) {
-      reject(new Error('MPV not ready'));
-      return;
-    }
-    const id = ++commandId;
-    const cmd = JSON.stringify({ command: args, request_id: id }) + '\n';
-    commandCallbacks.set(id, { resolve, reject, timeout: setTimeout(() => {
-      commandCallbacks.delete(id);
-      reject(new Error('MPV command timeout'));
-    }, 5000) });
-
-    try {
-      if (process.platform === 'win32') {
-        // Windows named pipe
-        const client = net.connect(mpvIpcPath, () => {
-          client.write(cmd);
-        });
-        let data = '';
-        client.on('data', (chunk) => { data += chunk; });
-        client.on('end', () => {
-          try {
-            const lines = data.trim().split('\n');
-            for (const line of lines) {
-              const resp = JSON.parse(line);
-              if (resp.request_id && commandCallbacks.has(resp.request_id)) {
-                const cb = commandCallbacks.get(resp.request_id);
-                clearTimeout(cb.timeout);
-                commandCallbacks.delete(resp.request_id);
-                if (resp.error === 'success') cb.resolve(resp.data);
-                else cb.reject(new Error(resp.error));
-              }
-            }
-          } catch (e) { /* parse error */ }
-        });
-        client.on('error', (err) => {
-          const cb = commandCallbacks.get(id);
-          if (cb) { clearTimeout(cb.timeout); commandCallbacks.delete(id); cb.reject(err); }
-        });
-      } else {
-        // Unix socket
-        const client = net.connect(mpvIpcPath, () => {
-          client.write(cmd);
-          client.end();
-        });
-        let data = '';
-        client.on('data', (chunk) => { data += chunk; });
-        client.on('end', () => {
-          try {
-            const resp = JSON.parse(data.trim().split('\n').pop());
-            const cb = commandCallbacks.get(id);
-            if (cb) {
-              clearTimeout(cb.timeout);
-              commandCallbacks.delete(id);
-              if (resp.error === 'success') cb.resolve(resp.data);
-              else cb.reject(new Error(resp.error));
-            }
-          } catch (e) { /* parse error */ }
-        });
-      }
-    } catch (e) {
-      const cb = commandCallbacks.get(id);
-      if (cb) { clearTimeout(cb.timeout); commandCallbacks.delete(id); cb.reject(e); }
-    }
-  });
-}
-
-// Get mpv property
-async function mpvGetProperty(name) {
-  return mpvCommand(['get_property', name]);
-}
-
-// Set mpv property
-async function mpvSetProperty(name, value) {
-  return mpvCommand(['set_property', name, value]);
-}
-
-function stopMpv() {
-  if (mpvProcess) {
-    try { mpvProcess.kill(); } catch(e) {}
-    mpvProcess = null;
-    mpvReady = false;
+function stopFfmpeg() {
+  if (ffmpegProcess) {
+    try { ffmpegProcess.kill('SIGKILL'); } catch(e) {}
+    ffmpegProcess = null;
   }
+}
+
+// Start a local HTTP server that pipes FFmpeg output to the browser
+function ensureLocalServer() {
+  return new Promise((resolve) => {
+    if (localServer && localServerPort) { resolve(localServerPort); return; }
+
+    localServer = http.createServer((req, res) => {
+      // The request URL contains the encoded source URL and options
+      const url = new URL(req.url, `http://localhost`);
+      const sourceUrl = url.searchParams.get('url');
+      const audioTrack = url.searchParams.get('audio') || '0';
+      const mode = url.searchParams.get('mode') || 'transcode'; // transcode | subtitle
+
+      if (!sourceUrl) { res.writeHead(400); res.end('Missing url'); return; }
+
+      if (mode === 'subtitle') {
+        // Extract subtitle track as WebVTT
+        const subIndex = url.searchParams.get('subIndex') || '0';
+        console.log(`[FFmpeg] Extracting subtitle track ${subIndex} from:`, sourceUrl);
+        res.writeHead(200, {
+          'Content-Type': 'text/vtt',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        });
+        const proc = spawn(ffmpegPath, [
+          '-i', sourceUrl,
+          '-map', `0:s:${subIndex}`,
+          '-f', 'webvtt',
+          'pipe:1',
+        ], { stdio: ['pipe', 'pipe', 'pipe'] });
+        proc.stdout.pipe(res);
+        proc.stderr.on('data', (d) => console.log('[FFmpeg sub]', d.toString().trim()));
+        proc.on('error', () => { res.end(); });
+        req.on('close', () => { try { proc.kill(); } catch(e) {} });
+        return;
+      }
+
+      // Transcode mode: remux stream with audio transcoded to AAC
+      console.log(`[FFmpeg] Transcoding (audio track ${audioTrack}):`, sourceUrl);
+      stopFfmpeg();
+
+      const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
+
+      const args = [
+        '-hide_banner', '-loglevel', 'warning',
+        '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+      ];
+
+      if (isLive) {
+        args.push('-re'); // real-time for live streams
+      }
+
+      args.push(
+        '-i', sourceUrl,
+        '-map', '0:v:0',
+        '-map', `0:a:${audioTrack}`,
+        '-c:v', 'copy',     // copy video (no re-encode)
+        '-c:a', 'aac',      // transcode audio to AAC (browser-compatible)
+        '-b:a', '192k',
+        '-ac', '2',
+        '-f', 'mpegts',     // output MPEG-TS (works with MSE)
+        'pipe:1',
+      );
+
+      res.writeHead(200, {
+        'Content-Type': 'video/mp2t',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+        'Transfer-Encoding': 'chunked',
+      });
+
+      ffmpegProcess = spawn(ffmpegPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      ffmpegProcess.stdout.pipe(res);
+      ffmpegProcess.stderr.on('data', (d) => {
+        const msg = d.toString().trim();
+        if (msg) console.log('[FFmpeg]', msg);
+      });
+      ffmpegProcess.on('exit', (code) => {
+        console.log('[FFmpeg] Process exited with code', code);
+        ffmpegProcess = null;
+        res.end();
+      });
+      ffmpegProcess.on('error', (err) => {
+        console.log('[FFmpeg] Process error:', err.message);
+        ffmpegProcess = null;
+        res.end();
+      });
+
+      req.on('close', () => {
+        console.log('[FFmpeg] Client disconnected, stopping');
+        stopFfmpeg();
+      });
+    });
+
+    localServer.listen(0, '127.0.0.1', () => {
+      localServerPort = localServer.address().port;
+      console.log('[FFmpeg] Local server on port', localServerPort);
+      resolve(localServerPort);
+    });
+  });
 }
 
 function createWindow() {
@@ -157,35 +171,23 @@ function createWindow() {
   });
 
   mainWindow = win;
-
-  // Load the built React app
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
 
-  // Open DevTools with F12 or --dev flag
   if (process.argv.includes('--dev')) {
     win.webContents.openDevTools();
   }
 
-  // Keyboard shortcuts: F11 fullscreen, F12 DevTools
   win.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'F12') {
-      win.webContents.toggleDevTools();
-    }
-    if (input.key === 'F11') {
-      win.setFullScreen(!win.isFullScreen());
-    }
-    if (input.key === 'Escape' && win.isFullScreen()) {
-      win.setFullScreen(false);
-    }
+    if (input.key === 'F12') win.webContents.toggleDevTools();
+    if (input.key === 'F11') win.setFullScreen(!win.isFullScreen());
+    if (input.key === 'Escape' && win.isFullScreen()) win.setFullScreen(false);
   });
 
-  // Stop mpv when window closes
-  win.on('closed', () => { stopMpv(); mainWindow = null; });
-
+  win.on('closed', () => { stopFfmpeg(); mainWindow = null; });
   return win;
 }
 
-// IPC handlers for proxy/VPN
+// IPC: Proxy
 ipcMain.handle('set-proxy', async (event, config) => {
   try {
     let proxyUrl;
@@ -195,10 +197,8 @@ ipcMain.handle('set-proxy', async (event, config) => {
       proxyUrl = `${config.protocol}://${config.server}:${config.port}`;
     }
     await session.defaultSession.setProxy({ proxyRules: proxyUrl });
-    console.log('Proxy set:', proxyUrl.replace(/:[^:@]+@/, ':***@'));
     return { success: true };
   } catch (err) {
-    console.error('Failed to set proxy:', err);
     return { success: false, error: err.message };
   }
 });
@@ -206,214 +206,132 @@ ipcMain.handle('set-proxy', async (event, config) => {
 ipcMain.handle('clear-proxy', async () => {
   try {
     await session.defaultSession.setProxy({ proxyRules: '' });
-    console.log('Proxy cleared');
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
 
-/* ══════ MPV IPC Handlers ══════ */
-ipcMain.handle('mpv-status', () => ({
-  available: !!mpvPath,
-  path: mpvPath,
-  ready: mpvReady,
+/* ══════ FFmpeg IPC Handlers ══════ */
+
+// Check FFmpeg availability
+ipcMain.handle('ffmpeg-status', () => ({
+  available: !!ffmpegPath,
+  ffmpegPath,
+  port: localServerPort,
 }));
 
-ipcMain.handle('mpv-play', async (event, { url, isLive }) => {
-  if (!mpvPath) return { success: false, error: 'MPV not available' };
+// Probe media file with ffmpeg -i (get audio/subtitle tracks)
+ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
+  if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
 
-  // Stop any existing mpv process
-  stopMpv();
-
-  // Set up IPC pipe path
-  mpvIpcPath = process.platform === 'win32'
-    ? '\\\\.\\pipe\\dashplayer-mpv-' + process.pid
-    : '/tmp/dashplayer-mpv-' + process.pid + '.sock';
-
-  // Clean up old socket on unix
-  if (process.platform !== 'win32') {
-    try { fs.unlinkSync(mpvIpcPath); } catch(e) {}
-  }
-
-  // Get the native window handle to embed mpv inside Electron
-  let wid = null;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    try {
-      const handle = mainWindow.getNativeWindowHandle();
-      if (process.platform === 'win32') {
-        // Windows HWND - read as pointer (works for both 32-bit and 64-bit)
-        wid = handle.length >= 8 ? Number(handle.readBigUInt64LE(0)) : handle.readUInt32LE(0);
-      } else {
-        wid = handle.readUInt32LE(0); // X11 window ID
+  return new Promise((resolve) => {
+    // ffmpeg -i <url> exits with error (no output specified) but prints stream info to stderr
+    execFile(ffmpegPath, ['-i', url, '-hide_banner'], { timeout: 15000 }, (err, stdout, stderr) => {
+      const output = stderr || '';
+      if (!output) {
+        resolve({ success: false, error: 'No output from ffmpeg' });
+        return;
       }
-      console.log('[MPV] Embedding in window handle:', wid);
-    } catch (e) {
-      console.log('[MPV] Could not get window handle:', e.message);
-    }
-  }
-
-  const args = [
-    '--no-terminal',
-    '--keep-open=yes',
-    '--no-osc',
-    '--no-input-default-bindings',
-    '--input-ipc-server=' + mpvIpcPath,
-    '--osd-level=0',
-    '--hwdec=auto',
-    '--volume=100',
-    '--cache=yes',
-    '--demuxer-max-bytes=50M',
-  ];
-
-  // Embed mpv inside the Electron window
-  if (wid) {
-    args.push('--wid=' + wid);
-  } else {
-    // Fallback: separate window
-    args.push('--force-window=yes', '--no-border', '--ontop', '--title=DashPlayer Video');
-  }
-
-  if (isLive) {
-    args.push('--cache-secs=5', '--demuxer-readahead-secs=3');
-  }
-
-  args.push('--', url);
-
-  console.log('[MPV] Starting:', mpvPath, args.join(' '));
-  mpvProcess = spawn(mpvPath, args, {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: false,
-  });
-
-  mpvProcess.stdout.on('data', (d) => console.log('[MPV out]', d.toString().trim()));
-  mpvProcess.stderr.on('data', (d) => console.log('[MPV err]', d.toString().trim()));
-  mpvProcess.on('exit', (code) => {
-    console.log('[MPV] Exited with code', code);
-    mpvReady = false;
-    mpvProcess = null;
-    // Notify renderer that mpv stopped
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('mpv-stopped');
-    }
-  });
-
-  // Wait for IPC to become available
-  await new Promise((resolve) => {
-    let attempts = 0;
-    const check = () => {
-      attempts++;
-      if (attempts > 20) { resolve(); return; } // give up after 2 seconds
       try {
-        const client = net.connect(mpvIpcPath, () => {
-          client.end();
-          mpvReady = true;
-          console.log('[MPV] IPC ready');
-          resolve();
-        });
-        client.on('error', () => { setTimeout(check, 100); });
-      } catch(e) { setTimeout(check, 100); }
-    };
-    setTimeout(check, 200);
-  });
+        const audio = [];
+        const subtitle = [];
+        let audioIdx = 0, subIdx = 0;
 
-  return { success: true, ready: mpvReady };
+        // Parse lines like: Stream #0:1(tur): Audio: aac (HE-AAC), 48000 Hz, stereo
+        // Or: Stream #0:1(tur): Audio: aac ... (default)
+        // Title lines: title           : Turkish
+        const lines = output.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const audioMatch = line.match(/Stream #\d+:(\d+)(?:\((\w+)\))?.*?Audio:\s*(\w+)/);
+          const subMatch = line.match(/Stream #\d+:(\d+)(?:\((\w+)\))?.*?Subtitle:\s*(\w+)/);
+
+          if (audioMatch) {
+            // Check next lines for title metadata
+            let title = '';
+            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+              const titleMatch = lines[j].match(/^\s+title\s*:\s*(.+)$/i);
+              if (titleMatch) { title = titleMatch[1].trim(); break; }
+              if (lines[j].match(/Stream #/)) break;
+            }
+            audio.push({
+              index: audioIdx++,
+              streamIndex: parseInt(audioMatch[1]),
+              codec: audioMatch[3],
+              lang: audioMatch[2] || '',
+              title: title,
+            });
+          }
+
+          if (subMatch) {
+            let title = '';
+            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+              const titleMatch = lines[j].match(/^\s+title\s*:\s*(.+)$/i);
+              if (titleMatch) { title = titleMatch[1].trim(); break; }
+              if (lines[j].match(/Stream #/)) break;
+            }
+            subtitle.push({
+              index: subIdx++,
+              streamIndex: parseInt(subMatch[1]),
+              codec: subMatch[3],
+              lang: subMatch[2] || '',
+              title: title,
+            });
+          }
+        }
+
+        console.log(`[FFmpeg probe] Found ${audio.length} audio, ${subtitle.length} subtitle tracks`);
+        resolve({ success: true, audio, subtitle });
+      } catch (e) {
+        console.log('[FFmpeg probe] Parse error:', e.message);
+        resolve({ success: false, error: 'Failed to parse probe data' });
+      }
+    });
+  });
 });
 
-ipcMain.handle('mpv-stop', () => {
-  stopMpv();
+// Get local transcode URL (browser will connect to our local server)
+ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack }) => {
+  if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
+  const port = await ensureLocalServer();
+  const transUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&audio=${audioTrack || 0}&mode=transcode`;
+  console.log('[FFmpeg] Transcode URL:', transUrl);
+  return { success: true, url: transUrl };
+});
+
+// Get subtitle extraction URL
+ipcMain.handle('ffmpeg-subtitle-url', async (event, { url, subIndex }) => {
+  if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
+  const port = await ensureLocalServer();
+  const subUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&subIndex=${subIndex || 0}&mode=subtitle`;
+  console.log('[FFmpeg] Subtitle URL:', subUrl);
+  return { success: true, url: subUrl };
+});
+
+// Stop current FFmpeg process
+ipcMain.handle('ffmpeg-stop', () => {
+  stopFfmpeg();
   return { success: true };
 });
 
-ipcMain.handle('mpv-command', async (event, { command }) => {
-  try {
-    const result = await mpvCommand(command);
-    return { success: true, data: result };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-ipcMain.handle('mpv-get-property', async (event, { name }) => {
-  try {
-    const result = await mpvGetProperty(name);
-    return { success: true, data: result };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-ipcMain.handle('mpv-set-property', async (event, { name, value }) => {
-  try {
-    await mpvSetProperty(name, value);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-// Get audio/subtitle track info from mpv
-ipcMain.handle('mpv-get-tracks', async () => {
-  try {
-    const count = await mpvGetProperty('track-list/count');
-    const tracks = { audio: [], subtitle: [] };
-    for (let i = 0; i < count; i++) {
-      const type = await mpvGetProperty(`track-list/${i}/type`);
-      const id = await mpvGetProperty(`track-list/${i}/id`);
-      const lang = await mpvGetProperty(`track-list/${i}/lang`).catch(() => '');
-      const title = await mpvGetProperty(`track-list/${i}/title`).catch(() => '');
-      const selected = await mpvGetProperty(`track-list/${i}/selected`).catch(() => false);
-      if (type === 'audio') {
-        tracks.audio.push({ id, lang: lang || '', title: title || '', selected });
-      } else if (type === 'sub') {
-        tracks.subtitle.push({ id, lang: lang || '', title: title || '', selected });
-      }
-    }
-    return { success: true, data: tracks };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-// Switch audio track
-ipcMain.handle('mpv-set-audio-track', async (event, { trackId }) => {
-  try {
-    await mpvSetProperty('aid', trackId);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-// Switch subtitle track (-1 or 'no' to disable)
-ipcMain.handle('mpv-set-subtitle-track', async (event, { trackId }) => {
-  try {
-    await mpvSetProperty('sid', trackId <= 0 ? 'no' : trackId);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
 app.whenReady().then(() => {
-  // Detect mpv (bundled or system)
-  mpvPath = getMpvPath();
+  ffmpegPath = findBinary('ffmpeg');
+
+  // Start the local server immediately if FFmpeg is available
+  if (ffmpegPath) ensureLocalServer();
 
   createWindow();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('window-all-closed', () => {
-  stopMpv();
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  stopFfmpeg();
+  if (localServer) { try { localServer.close(); } catch(e) {} }
+  if (process.platform !== 'darwin') app.quit();
 });
 
-// Set app user model ID for Windows
 app.setAppUserModelId('tv.dashplayer.app');

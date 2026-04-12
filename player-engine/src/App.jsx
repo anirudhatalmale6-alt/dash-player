@@ -799,7 +799,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const [subtitleTracks, setSubtitleTracks] = useState([]);
   const [selectedSubtitle, setSelectedSubtitle] = useState(-1);
   const [showTrackMenu, setShowTrackMenu] = useState(null); // 'audio' | 'subtitle' | null
-  const [usingMpv, setUsingMpv] = useState(false);
+  const [usingFfmpeg, setUsingFfmpeg] = useState(false);
   const mountedRef = useRef(true);
 
   const cleanup = useCallback(() => {
@@ -816,24 +816,15 @@ function VideoPlayer({ url, onClose, title, inline }) {
       try { hlsRef.current.destroy(); } catch(e) {}
       hlsRef.current = null;
     }
-    // Stop mpv native player if running
-    if (window.dashPlayer?.mpvStop) {
-      window.dashPlayer.mpvStop().catch(() => {});
+    // Stop FFmpeg transcode if running
+    if (window.dashPlayer?.ffmpegStop) {
+      window.dashPlayer.ffmpegStop().catch(() => {});
     }
-    setUsingMpv(false);
+    setUsingFfmpeg(false);
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
-    // Listen for mpv stopped event (user closed mpv window)
-    if (window.dashPlayer?.onMpvStopped) {
-      window.dashPlayer.onMpvStopped(() => {
-        if (mountedRef.current) {
-          setUsingMpv(false);
-          onClose?.();
-        }
-      });
-    }
     return () => { mountedRef.current = false; cleanup(); if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current.load(); } };
   }, []);
 
@@ -1045,64 +1036,71 @@ function VideoPlayer({ url, onClose, title, inline }) {
       return true;
     };
 
-    // MPV native player fallback - handles ALL codecs, audio tracks, subtitles
-    const tryMpv = async () => {
-      if (!window.dashPlayer?.mpvPlay) return nextStep();
-      console.log('[DashPlayer] Trying MPV native player:', isLive ? baseUrl + '.ts' : url);
-      setCurrentFormat('MPV');
+    // FFmpeg transcode fallback - transcodes audio to AAC so browser can play it
+    const tryFfmpeg = async () => {
+      if (!window.dashPlayer?.ffmpegTranscodeUrl) return nextStep();
+      const streamUrl = isLive ? baseUrl + '.ts' : url;
+      console.log('[DashPlayer] Trying FFmpeg transcode:', streamUrl);
+      setCurrentFormat('FFmpeg');
       try {
-        const result = await window.dashPlayer.mpvPlay({
-          url: isLive ? baseUrl + '.ts' : url,
-          isLive,
-        });
-        if (result.success) {
-          setLoading(false);
-          setError(null);
-          setUsingMpv(true);
-          playbackStarted = true;
-          // Get track info from mpv after a short delay
-          setTimeout(async () => {
-            if (!mountedRef.current) return;
-            try {
-              const tracks = await window.dashPlayer.mpvGetTracks();
-              if (tracks.success && tracks.data) {
-                if (tracks.data.audio.length > 1) {
-                  setAudioTracks(tracks.data.audio.map((t, i) => ({
-                    id: t.id, label: t.title || t.lang || `Audio ${i + 1}`, lang: t.lang || '',
-                  })));
-                  const sel = tracks.data.audio.findIndex(t => t.selected);
-                  if (sel >= 0) setSelectedAudio(tracks.data.audio[sel].id);
-                }
-                if (tracks.data.subtitle.length > 0) {
-                  setSubtitleTracks(tracks.data.subtitle.map((t, i) => ({
-                    id: t.id, label: t.title || t.lang || `Subtitle ${i + 1}`, lang: t.lang || '',
-                  })));
-                }
-              }
-            } catch (e) { console.log('[DashPlayer] MPV track query error:', e); }
-          }, 2000);
-        } else {
-          console.log('[DashPlayer] MPV failed:', result.error);
+        const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack: 0 });
+        if (!result.success || !result.url) { console.log('[DashPlayer] FFmpeg URL failed'); nextStep(); return; }
+        setUsingFfmpeg(true);
+        video.src = result.url;
+        video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
+        video.addEventListener('playing', () => { playbackStarted = true; onPlaying(); }, { once: true });
+        video.addEventListener('error', (e) => {
+          console.log('[DashPlayer] FFmpeg playback error:', e);
+          if (!mountedRef.current || playbackStarted) return;
+          setUsingFfmpeg(false);
           nextStep();
-        }
+        }, { once: true });
+        video.play().catch(() => {});
+        retryTimerRef.current = setTimeout(() => {
+          if (!mountedRef.current || playbackStarted) return;
+          if (video.readyState < 2) {
+            console.log('[DashPlayer] FFmpeg timeout');
+            setUsingFfmpeg(false);
+            nextStep();
+          }
+        }, 8000); // longer timeout for FFmpeg startup
       } catch (e) {
-        console.log('[DashPlayer] MPV error:', e);
+        console.log('[DashPlayer] FFmpeg error:', e);
+        setUsingFfmpeg(false);
         nextStep();
       }
     };
 
+    // Probe tracks with ffprobe for movies
+    if (!isLive && window.dashPlayer?.ffmpegProbe) {
+      window.dashPlayer.ffmpegProbe({ url }).then(probeResult => {
+        if (!probeResult?.success || !mountedRef.current) return;
+        console.log('[DashPlayer] FFprobe result:', probeResult);
+        if (probeResult.audio && probeResult.audio.length > 1) {
+          setAudioTracks(probeResult.audio.map((t, i) => ({
+            id: i, label: t.title || t.lang || `Audio ${i + 1}`, lang: t.lang || '', codec: t.codec,
+          })));
+        }
+        if (probeResult.subtitle && probeResult.subtitle.length > 0) {
+          setSubtitleTracks(probeResult.subtitle.map((t, i) => ({
+            id: i, label: t.title || t.lang || `Subtitle ${i + 1}`, lang: t.lang || '', codec: t.codec,
+          })));
+        }
+      }).catch(e => console.log('[DashPlayer] FFprobe error:', e));
+    }
+
     // Build the format chain based on stream type
-    // For live: HLS → MPEG-TS → MPV(native, all codecs) → MPEG-TS(video-only) → Direct
-    // For VOD: Direct → MPV(native, audio tracks + subtitles) → MPEG-TS → HLS
+    // For live: HLS → MPEG-TS → FFmpeg(transcode audio to AAC) → MPEG-TS(video-only) → Direct
+    // For VOD: Direct → FFmpeg(transcode) → MPEG-TS → HLS
     const steps = isLive ? [
       () => tryHls(baseUrl + '.m3u8'),
       () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'),
-      () => tryMpv(), // MPV handles MP2 audio, H.265, everything
+      () => tryFfmpeg(), // FFmpeg transcodes MP2→AAC so browser can play
       () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS', true), // video-only fallback
       () => tryDirect(url),
     ] : [
       () => tryDirect(url),
-      () => tryMpv(), // MPV for full audio track + subtitle support
+      () => tryFfmpeg(), // FFmpeg for codec compatibility
       () => createMpegTsPlayer(url, 'MPEG-TS'),
       () => tryHls(baseUrl + '.m3u8'),
     ];
@@ -1127,9 +1125,18 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
-    if (usingMpv && window.dashPlayer?.mpvSetAudioTrack) {
-      console.log('[DashPlayer] MPV: switching audio track to', trackId);
-      await window.dashPlayer.mpvSetAudioTrack({ trackId });
+    if (usingFfmpeg && window.dashPlayer?.ffmpegTranscodeUrl && url) {
+      // Re-transcode with different audio track via FFmpeg
+      console.log('[DashPlayer] FFmpeg: switching to audio track', trackId);
+      const currentTime = videoRef.current?.currentTime || 0;
+      const isLive = url.includes('/live/') || url.includes('/timeshift/');
+      const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
+      const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack: trackId });
+      if (result.success && result.url && videoRef.current) {
+        videoRef.current.src = result.url;
+        if (!isLive && currentTime > 0) videoRef.current.currentTime = currentTime;
+        videoRef.current.play().catch(() => {});
+      }
     } else if (hlsRef.current && hlsRef.current.audioTracks && hlsRef.current.audioTracks.length > 1) {
       hlsRef.current.audioTrack = trackId;
     } else if (videoRef.current && videoRef.current.audioTracks && videoRef.current.audioTracks.length > 1) {
@@ -1142,9 +1149,31 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleSubtitleChange = async (trackId) => {
     setSelectedSubtitle(trackId);
     setShowTrackMenu(null);
-    if (usingMpv && window.dashPlayer?.mpvSetSubtitleTrack) {
-      console.log('[DashPlayer] MPV: switching subtitle track to', trackId);
-      await window.dashPlayer.mpvSetSubtitleTrack({ trackId });
+    if (trackId >= 0 && window.dashPlayer?.ffmpegSubtitleUrl && url) {
+      // Extract subtitle via FFmpeg as WebVTT
+      console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
+      const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
+      if (result.success && result.url && videoRef.current) {
+        // Remove existing track elements
+        const container = videoRef.current.parentElement || videoRef.current;
+        const existing = container.querySelectorAll('track');
+        existing.forEach(t => t.remove());
+        // Add WebVTT track
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.label = subtitleTracks.find(t => t.id === trackId)?.label || `Subtitle ${trackId + 1}`;
+        track.srclang = subtitleTracks.find(t => t.id === trackId)?.lang || 'und';
+        track.src = result.url;
+        track.default = true;
+        videoRef.current.appendChild(track);
+        setTimeout(() => {
+          if (videoRef.current?.textTracks) {
+            for (let i = 0; i < videoRef.current.textTracks.length; i++) {
+              videoRef.current.textTracks[i].mode = 'showing';
+            }
+          }
+        }, 500);
+      }
     } else if (hlsRef.current && hlsRef.current.subtitleTracks && hlsRef.current.subtitleTracks.length > 0) {
       hlsRef.current.subtitleTrack = trackId;
       hlsRef.current.subtitleDisplay = trackId >= 0;
@@ -1156,7 +1185,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
         }
       }
     }
-    if (trackId === -1 && !usingMpv && videoRef.current?.textTracks) {
+    if (trackId === -1 && videoRef.current?.textTracks) {
       for (let i = 0; i < videoRef.current.textTracks.length; i++) {
         videoRef.current.textTracks[i].mode = 'disabled';
       }
@@ -1240,31 +1269,6 @@ function VideoPlayer({ url, onClose, title, inline }) {
     cleanup();
     onClose?.();
   };
-
-  // When mpv is embedded, it renders directly into the Electron window.
-  // Show a transparent overlay with controls on top.
-  if (usingMpv) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', pointerEvents: 'none' }}>
-        {/* Top bar with title and close button */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px',
-          background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)', pointerEvents: 'auto' }}>
-          <span style={{ color: '#fff', fontSize: 14, fontWeight: 500, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{title || 'Playing'}</span>
-          <button onClick={handleClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
-            width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&#10005;</button>
-        </div>
-        {/* Spacer - transparent area where mpv video shows through */}
-        <div style={{ flex: 1 }} />
-        {/* Bottom controls: audio/subtitle track selection */}
-        {(audioTracks.length > 1 || subtitleTracks.length > 0) && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 16px',
-            background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)', pointerEvents: 'auto' }}>
-            <TrackMenus />
-          </div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="video-player-overlay" onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>

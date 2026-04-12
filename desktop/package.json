@@ -27,8 +27,8 @@
     ],
     "extraResources": [
       {
-        "from": "resources/mpv",
-        "to": "mpv"
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg"
       }
     ],
     "win": {
