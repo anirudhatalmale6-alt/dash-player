@@ -963,8 +963,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
     };
 
     if (isLive) {
-      // Try MPEG-TS first (better for IPTV), then HLS, then direct
-      tryMpegTs(url.replace(/\.\w+$/, '.ts'));
+      // Try HLS first, then MPEG-TS, then direct
+      tryHls();
     } else {
       setCurrentFormat('Direct');
       video.src = url;
@@ -998,7 +998,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       <div className="inline-player">
         {loading && !error && <div className="inline-player-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="inline-player-error">{error}</div>}
-        <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline />
+        <video ref={videoRef} className="inline-video-element" controls autoPlay playsInline controlsList="nodownload" crossOrigin="anonymous" />
         {!loading && !error && (
           <div className="inline-player-controls">
             <button className="fullscreen-btn" onClick={handleFullscreen} title="Fullscreen">&#x26F6;</button>
@@ -1020,7 +1020,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
         </div>
         {loading && !error && <div className="video-loading">Connecting{currentFormat ? ` (${currentFormat})` : ''}...</div>}
         {error && <div className="video-error">{error}</div>}
-        <video ref={videoRef} className="video-element" controls autoPlay playsInline />
+        <video ref={videoRef} className="video-element" controls autoPlay playsInline controlsList="nodownload" crossOrigin="anonymous" />
       </div>
     </div>
   );
