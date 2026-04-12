@@ -55,8 +55,10 @@ function addToHistory(item) {
 }
 
 /* ── Xtream API helper ── */
-function createXtreamApi(url, username, password) {
+function createXtreamApi(url, username, password, outputFormat = 'm3u8') {
   const baseUrl = url.replace(/\/$/, '');
+  // Determine live stream extension based on output format
+  const liveExt = outputFormat === 'ts' ? 'ts' : 'm3u8';
   const req = async (action, params = {}) => {
     try {
       const res = await axios.get(`${baseUrl}/player_api.php`, {
@@ -82,10 +84,12 @@ function createXtreamApi(url, username, password) {
     getVodInfo: (vodId) => req('get_vod_info', { vod_id: vodId }),
     getEPG: (streamId) => req('get_short_epg', { stream_id: streamId }),
     getFullEPG: (streamId) => req('get_simple_data_table', { stream_id: streamId }),
-    getLiveUrl: (streamId, ext = 'ts') => `${baseUrl}/live/${username}/${password}/${streamId}.${ext}`,
+    getLiveUrl: (streamId) => `${baseUrl}/live/${username}/${password}/${streamId}.${liveExt}`,
     getVodUrl: (streamId, ext = 'mp4') => `${baseUrl}/movie/${username}/${password}/${streamId}.${ext}`,
     getSeriesUrl: (streamId, ext = 'mp4') => `${baseUrl}/series/${username}/${password}/${streamId}.${ext}`,
-    getTimeshiftUrl: (streamId, start, duration) => `${baseUrl}/timeshift/${username}/${password}/${duration}/${start}/${streamId}.ts`,
+    getTimeshiftUrl: (streamId, start, duration) => `${baseUrl}/timeshift/${username}/${password}/${duration}/${start}/${streamId}.${liveExt}`,
+    outputFormat,
+    liveExt,
   };
 }
 
@@ -123,6 +127,7 @@ function ActivationScreen({ onActivated }) {
   const [password, setPassword] = useState('');
   const [connectError, setConnectError] = useState('');
   const [m3uInput, setM3uInput] = useState('');
+  const [outputFormat, setOutputFormat] = useState('m3u8');
   const panelUrl = 'https://dashplayer.eu';
 
   const copyToClipboard = (text, field) => {
@@ -164,10 +169,10 @@ function ActivationScreen({ onActivated }) {
     setChecking(true);
     setConnectError('');
     try {
-      const api = createXtreamApi(serverUrl, username, password);
+      const api = createXtreamApi(serverUrl, username, password, outputFormat);
       const data = await api.authenticate();
       if (data && data.user_info) {
-        onActivated({ url: serverUrl, username, password });
+        onActivated({ url: serverUrl, username, password, output_format: outputFormat });
       } else {
         setConnectError('Could not authenticate. Check your credentials.');
       }
@@ -243,6 +248,13 @@ function ActivationScreen({ onActivated }) {
                       <input className="quick-connect-input" placeholder="password" value={password} onChange={e => setPassword(e.target.value)} />
                     </div>
                   </div>
+                </div>
+                <div className="activation-field">
+                  <label className="activation-label">Output Format</label>
+                  <select className="quick-connect-input" value={outputFormat} onChange={e => setOutputFormat(e.target.value)} style={{cursor:'pointer'}}>
+                    <option value="m3u8">HLS (M3U8)</option>
+                    <option value="ts">MPEG-TS</option>
+                  </select>
                 </div>
                 <button className="activation-btn activation-btn-reload" onClick={handleQuickConnect} disabled={checking} style={{marginTop: 8, width: '100%'}}>
                   {checking ? 'Connecting...' : 'CONNECT'}
@@ -854,7 +866,7 @@ function LiveTVScreen({ onBack, api }) {
                 </div>
               </div>
               <div className="live-player-video">
-                {api && <VideoPlayer key={playingChannel.stream_id} url={api.getLiveUrl(playingChannel.stream_id, 'ts')} title={playingChannel.name} onClose={() => setPlayingChannel(null)} inline={true} />}
+                {api && <VideoPlayer key={playingChannel.stream_id} url={api.getLiveUrl(playingChannel.stream_id)} title={playingChannel.name} onClose={() => setPlayingChannel(null)} inline={true} />}
               </div>
               <div className="live-player-epg-bar" onClick={() => epgData.length > 0 && setShowEpgOverlay(v => !v)}>
                 {epgData.length > 0 ? epgData.filter(p => isCurrentProgram(p) || !isPastProgram(p)).slice(0, 4).map((prog, idx) => (
@@ -1613,6 +1625,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [m3uInput, setM3uInput] = useState('');
+  const [outputFormat, setOutputFormat] = useState('m3u8');
   const [msg, setMsg] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [pinPrompt, setPinPrompt] = useState(null); // { playlistId, pin, error }
@@ -1639,7 +1652,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
   };
 
   const resetForm = () => {
-    setName(''); setServerUrl(''); setUsername(''); setPassword(''); setM3uInput('');
+    setName(''); setServerUrl(''); setUsername(''); setPassword(''); setM3uInput(''); setOutputFormat('m3u8');
     setShowAdd(false); setEditId(null);
   };
 
@@ -1651,11 +1664,11 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
     }
     let updated;
     if (editId !== null) {
-      updated = playlists.map(p => p.id === editId ? { ...p, name: name || 'My Playlist', server_url: serverUrl, username, password } : p);
+      updated = playlists.map(p => p.id === editId ? { ...p, name: name || 'My Playlist', server_url: serverUrl, username, password, output_format: outputFormat } : p);
     } else {
       const newId = Date.now();
       const isDefault = playlists.length === 0 ? true : false;
-      updated = [...playlists, { id: newId, name: name || 'My Playlist', server_url: serverUrl, username, password, is_default: isDefault }];
+      updated = [...playlists, { id: newId, name: name || 'My Playlist', server_url: serverUrl, username, password, output_format: outputFormat, is_default: isDefault }];
     }
     savePlaylists(updated);
     setPlaylists(updated);
@@ -1670,6 +1683,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
     setServerUrl(pl.server_url);
     setUsername(pl.username);
     setPassword(pl.password);
+    setOutputFormat(pl.output_format || 'm3u8');
     setShowAdd(true);
   };
 
@@ -1690,7 +1704,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
     savePlaylists(updated);
     setPlaylists(updated);
     const pl = updated.find(p => p.id === id);
-    if (pl && onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+    if (pl && onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password, output_format: pl.output_format || 'm3u8' });
     setMsg('Default playlist changed');
     setTimeout(() => setMsg(''), 3000);
   };
@@ -1699,7 +1713,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
     if (pl.pin) {
       setPinPrompt({ playlistId: pl.id, pin: '', error: '' });
     } else {
-      if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+      if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password, output_format: pl.output_format || 'm3u8' });
     }
   };
 
@@ -1709,7 +1723,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
     if (!pl) return;
     if (pinPrompt.pin === pl.pin) {
       setPinPrompt(null);
-      if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password });
+      if (onSwitch) onSwitch({ url: pl.server_url, username: pl.username, password: pl.password, output_format: pl.output_format || 'm3u8' });
     } else {
       setPinPrompt({ ...pinPrompt, error: 'Incorrect PIN. Please try again.' });
     }
@@ -1777,6 +1791,13 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
                   <input className="quick-connect-input" placeholder="password" value={password} onChange={e => setPassword(e.target.value)} />
                 </div>
               </div>
+              <div>
+                <label className="settings-device-label" style={{ display: 'block', marginBottom: 6 }}>Output Format</label>
+                <select className="quick-connect-input" value={outputFormat} onChange={e => setOutputFormat(e.target.value)} style={{cursor:'pointer'}}>
+                  <option value="m3u8">HLS (M3U8)</option>
+                  <option value="ts">MPEG-TS</option>
+                </select>
+              </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <button className="settings-btn settings-btn-primary" onClick={handleSave}>{editId !== null ? 'Update' : 'Add Playlist'}</button>
                 <button className="settings-btn settings-btn-secondary" onClick={resetForm}>Cancel</button>
@@ -1812,6 +1833,7 @@ function PlaylistsScreen({ onBack, onSwitch, activePlaylist }) {
                 <div className="settings-device-info" style={{ marginBottom: 12 }}>
                   <div className="settings-device-row"><span className="settings-device-label">Server</span><span className="settings-device-value" style={{ wordBreak: 'break-all' }}>{pl.server_url}</span></div>
                   <div className="settings-device-row"><span className="settings-device-label">Username</span><span className="settings-device-value">{isProtected ? '*****' : pl.username}</span></div>
+                  <div className="settings-device-row"><span className="settings-device-label">Format</span><span className="settings-device-value">{(pl.output_format || 'm3u8') === 'ts' ? 'MPEG-TS' : 'HLS (M3U8)'}</span></div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {!isActive && (
@@ -2230,8 +2252,8 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
             <div key={itemId} className="history-item">
               {icon ? <img className="history-icon" src={icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="history-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{type === 'live' ? '\u{1F4FA}' : '\u{1F3AC}'}</div>}
               <div className="history-info" onClick={() => {
-                if (type === 'live' && api) { setPlayingItem({ url: api.getLiveUrl(itemId, 'ts'), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'live', streamId: itemId }); }
-                else if (type === 'vod' && api) { setPlayingItem({ url: api.getVodUrl(itemId, 'mp4'), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'vod', streamId: itemId }); }
+                if (type === 'live' && api) { setPlayingItem({ url: api.getLiveUrl(itemId), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'live', streamId: itemId }); }
+                else if (type === 'vod' && api) { setPlayingItem({ url: api.getVodUrl(itemId), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'vod', streamId: itemId }); }
               }} style={{ cursor: 'pointer', flex: 1 }}>
                 <div className="history-name">{itemName}</div>
               </div>
@@ -2287,8 +2309,8 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
               <div className="history-list">
                 {history.map(item => (
                   <div key={item.id} className="history-item" onClick={() => {
-                    if (item.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(item.streamId, 'ts'), name: item.name });
-                    else if (item.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(item.streamId, 'mp4'), name: item.name });
+                    if (item.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(item.streamId), name: item.name });
+                    else if (item.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(item.streamId), name: item.name });
                   }}>
                     {item.icon ? <img className="history-icon" src={item.icon} alt="" onError={e => e.target.style.display='none'} /> : null}
                     <div className="history-info"><div className="history-name">{item.name}</div><div className="history-meta">{item.type === 'live' ? 'Live TV' : item.type === 'vod' ? 'Movie' : 'Series'} - {new Date(item.watchedAt).toLocaleDateString()}</div></div>
@@ -2354,7 +2376,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
                         <div key={ch.id} className="history-item">
                           {ch.icon ? <img className="history-icon" src={ch.icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="history-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{ch.type === 'live' ? '\u{1F4FA}' : '\u{1F3AC}'}</div>}
                           <div className="history-info" onClick={() => {
-                            if (ch.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(ch.id, 'ts'), name: ch.name });
+                            if (ch.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(ch.id), name: ch.name });
                             else if (ch.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(ch.id, 'mp4'), name: ch.name });
                           }} style={{ cursor: 'pointer', flex: 1 }}>
                             <div className="history-name">{ch.name}</div>
@@ -2572,7 +2594,7 @@ function SearchScreen({ onBack, api }) {
                 <div className="search-items">
                   {results.live.map(ch => (
                     <div key={ch.stream_id} className="search-result-item" onClick={() => {
-                      if (api) setPlayingItem({ url: api.getLiveUrl(ch.stream_id, 'ts'), name: ch.name });
+                      if (api) setPlayingItem({ url: api.getLiveUrl(ch.stream_id), name: ch.name });
                       addToHistory({ id: `live_${ch.stream_id}`, name: ch.name, type: 'live', streamId: ch.stream_id, icon: ch.stream_icon });
                     }}>
                       {ch.stream_icon ? <img className="search-result-icon" src={ch.stream_icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="search-result-letter">{ch.name?.charAt(0)}</div>}
@@ -2974,7 +2996,7 @@ function MultiScreenScreen({ onBack, api }) {
                 <>
                   <div className="multiscreen-cell-label">{screens[idx].name}</div>
                   <button className="multiscreen-cell-close" onClick={(e) => { e.stopPropagation(); handleClearCell(idx); }}>&#10005;</button>
-                  {api && <VideoPlayer url={api.getLiveUrl(screens[idx].stream_id, 'ts')} title={screens[idx].name} inline={true} />}
+                  {api && <VideoPlayer url={api.getLiveUrl(screens[idx].stream_id)} title={screens[idx].name} inline={true} />}
                 </>
               ) : (
                 <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', cursor: 'pointer', flexDirection: 'column', gap: 8}}
@@ -3038,7 +3060,8 @@ export default function App() {
 
   useEffect(() => {
     if (credentials && credentials.url && credentials.username && credentials.password) {
-      setApi(createXtreamApi(credentials.url, credentials.username, credentials.password));
+      const format = credentials.output_format || 'm3u8';
+      setApi(createXtreamApi(credentials.url, credentials.username, credentials.password, format));
     }
   }, [credentials]);
 
@@ -3082,7 +3105,7 @@ export default function App() {
     // Save as first playlist if none exist
     const existing = getPlaylists();
     if (existing.length === 0 && creds.url && creds.url !== 'http://demo') {
-      savePlaylists([{ id: Date.now(), name: 'My Playlist', server_url: creds.url, username: creds.username, password: creds.password, is_default: true }]);
+      savePlaylists([{ id: Date.now(), name: 'My Playlist', server_url: creds.url, username: creds.username, password: creds.password, output_format: creds.output_format || 'm3u8', is_default: true }]);
     }
     setCredentials(creds);
     setScreen('home');

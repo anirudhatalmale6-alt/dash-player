@@ -155,8 +155,9 @@ function renderPlaylists() {
   container.innerHTML = devicePlaylists.map((pl, i) => `
     <div class="playlist-item">
       <div class="playlist-item-info">
+        <div class="playlist-name" style="font-weight:600;margin-bottom:2px;">${escapeHtml(pl.name || 'My Playlist')}</div>
         <div class="playlist-url">${escapeHtml(pl.server_url || pl.url || pl.server || 'N/A')}</div>
-        <div class="playlist-user">User: ${escapeHtml(pl.username || 'N/A')}</div>
+        <div class="playlist-user">User: ${escapeHtml(pl.username || 'N/A')} | Format: ${(pl.output_format || 'm3u8') === 'ts' ? 'MPEG-TS' : 'HLS (M3U8)'}</div>
       </div>
       <div class="playlist-item-actions">
         ${pl.is_default ? '<span class="playlist-default-badge">Default</span>' : `<button class="btn btn-sm btn-ghost" onclick="setDefaultPlaylist(${pl.id || i})"><i class="fas fa-star"></i> Set Default</button>`}
@@ -167,9 +168,11 @@ function renderPlaylists() {
 }
 
 async function addPlaylist() {
+  const playlistName = document.getElementById('playlistName').value.trim();
   const serverUrl = document.getElementById('playlistServerUrl').value.trim();
   const username = document.getElementById('playlistUsername').value.trim();
   const password = document.getElementById('playlistPassword').value.trim();
+  const outputFormat = document.getElementById('playlistOutputFormat').value;
 
   if (!serverUrl || !username || !password) return;
 
@@ -181,17 +184,21 @@ async function addPlaylist() {
     await apiPost('/device/playlists', {
       mac_address: currentPlaylistMac,
       device_key: currentPlaylistKey,
+      name: playlistName || 'My Playlist',
       server_url: serverUrl,
       username: username,
-      password: password
+      password: password,
+      output_format: outputFormat
     });
 
     showSuccess('addPlaylistSuccess', 'Playlist added successfully!');
 
     // Clear form
+    document.getElementById('playlistName').value = '';
     document.getElementById('playlistServerUrl').value = '';
     document.getElementById('playlistUsername').value = '';
     document.getElementById('playlistPassword').value = '';
+    document.getElementById('playlistOutputFormat').value = 'm3u8';
 
     // Reload playlists
     await reloadPlaylists();

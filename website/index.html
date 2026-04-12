@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css?v=2.4">
+  <link rel="stylesheet" href="style.css?v=2.5">
 </head>
 <body>
 
@@ -245,6 +245,13 @@
           <form id="addPlaylistForm">
             <div class="form-grid">
               <div class="form-group">
+                <label for="playlistName">Playlist Name</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-tag"></i></span>
+                  <input type="text" id="playlistName" placeholder="My Playlist">
+                </div>
+              </div>
+              <div class="form-group">
                 <label for="playlistServerUrl">Server URL</label>
                 <div class="input-group">
                   <span class="input-icon"><i class="fas fa-server"></i></span>
@@ -265,6 +272,16 @@
                   <input type="password" id="playlistPassword" placeholder="Password" required>
                 </div>
               </div>
+              <div class="form-group">
+                <label for="playlistOutputFormat">Output Format</label>
+                <div class="input-group">
+                  <span class="input-icon"><i class="fas fa-film"></i></span>
+                  <select id="playlistOutputFormat">
+                    <option value="m3u8">HLS (M3U8)</option>
+                    <option value="ts">MPEG-TS</option>
+                  </select>
+                </div>
+              </div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add Playlist</button>
           </form>
@@ -278,7 +295,10 @@
 
         <!-- Current Playlists (hidden until lookup) -->
         <div id="currentPlaylists" class="card" style="display:none;">
-          <h3><i class="fas fa-list-ul"></i> Current Playlists</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h3 style="margin:0;"><i class="fas fa-list-ul"></i> Current Playlists</h3>
+            <button class="btn btn-sm btn-ghost" onclick="reloadPlaylists()"><i class="fas fa-sync-alt"></i> Refresh</button>
+          </div>
           <div id="playlistsList"></div>
           <div id="playlistsEmpty" class="empty-state" style="display:none;">
             <i class="fas fa-inbox"></i>
@@ -481,6 +501,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=2.4"></script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>

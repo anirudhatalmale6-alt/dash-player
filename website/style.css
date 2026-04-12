@@ -593,6 +593,23 @@ img {
 .input-group input::placeholder {
   color: #b0a8c4;
 }
+.input-group select {
+  width: 100%;
+  padding: 0.7rem 1rem 0.7rem 2.5rem;
+  border: 1.5px solid rgba(139, 92, 246, 0.15);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.97rem;
+  background: #f8f7fc;
+  color: #1e1e2e;
+  cursor: pointer;
+}
+.input-group select:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  background: #fff;
+}
 
 /* -- Alerts -- */
 .alert {

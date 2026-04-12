@@ -74,6 +74,7 @@ db.exec(`
     server_url TEXT NOT NULL,
     username TEXT NOT NULL,
     password TEXT NOT NULL,
+    output_format TEXT DEFAULT 'm3u8',
     is_default INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
@@ -103,6 +104,7 @@ db.exec(`
 try { db.exec('ALTER TABLE devices ADD COLUMN mac_change_limit INTEGER DEFAULT 1'); } catch (e) { /* column exists */ }
 try { db.exec('ALTER TABLE devices ADD COLUMN mac_changes_used INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
 try { db.exec('ALTER TABLE devices ADD COLUMN is_banned INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+try { db.exec("ALTER TABLE playlists ADD COLUMN output_format TEXT DEFAULT 'm3u8'"); } catch (e) { /* column exists */ }
 
 // Insert default settings if not exist
 const defaultSettings = [

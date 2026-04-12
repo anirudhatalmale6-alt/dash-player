@@ -58,7 +58,7 @@ router.post('/device/lookup', (req, res) => {
 
 // Add playlist to device (public, requires MAC + device_key)
 router.post('/device/playlists', (req, res) => {
-  const { mac_address, device_key, name, server_url, username, password } = req.body;
+  const { mac_address, device_key, name, server_url, username, password, output_format } = req.body;
   if (!mac_address || !device_key || !server_url || !username || !password) {
     return res.status(400).json({ error: 'mac_address, device_key, server_url, username, and password are required' });
   }
@@ -68,9 +68,10 @@ router.post('/device/playlists', (req, res) => {
 
   const existingCount = db.prepare('SELECT COUNT(*) as count FROM playlists WHERE device_id = ?').get(device.id).count;
   const isDefault = existingCount === 0 ? 1 : 0;
+  const format = (output_format === 'ts') ? 'ts' : 'm3u8';
 
-  const result = db.prepare('INSERT INTO playlists (device_id, name, server_url, username, password, is_default) VALUES (?, ?, ?, ?, ?, ?)').run(
-    device.id, name || 'My Playlist', server_url, username, password, isDefault
+  const result = db.prepare('INSERT INTO playlists (device_id, name, server_url, username, password, output_format, is_default) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+    device.id, name || 'My Playlist', server_url, username, password, format, isDefault
   );
 
   // Also update device's primary playlist fields if this is the first/default
@@ -83,7 +84,7 @@ router.post('/device/playlists', (req, res) => {
 
 // Update playlist
 router.put('/device/playlists/:id', (req, res) => {
-  const { mac_address, device_key, name, server_url, username, password } = req.body;
+  const { mac_address, device_key, name, server_url, username, password, output_format } = req.body;
   if (!mac_address || !device_key) return res.status(400).json({ error: 'mac_address and device_key required' });
 
   const device = db.prepare('SELECT id FROM devices WHERE mac_address = ? AND device_key = ?').get(mac_address, device_key);
@@ -92,8 +93,9 @@ router.put('/device/playlists/:id', (req, res) => {
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ? AND device_id = ?').get(req.params.id, device.id);
   if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
 
-  db.prepare('UPDATE playlists SET name = ?, server_url = ?, username = ?, password = ? WHERE id = ?').run(
-    name || playlist.name, server_url || playlist.server_url, username || playlist.username, password || playlist.password, req.params.id
+  const format = output_format ? ((output_format === 'ts') ? 'ts' : 'm3u8') : playlist.output_format;
+  db.prepare('UPDATE playlists SET name = ?, server_url = ?, username = ?, password = ?, output_format = ? WHERE id = ?').run(
+    name || playlist.name, server_url || playlist.server_url, username || playlist.username, password || playlist.password, format, req.params.id
   );
 
   // If this is default, update device fields too
