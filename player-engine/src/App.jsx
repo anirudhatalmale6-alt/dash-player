@@ -1242,6 +1242,7 @@ function SettingsScreen({ onBack, api }) {
   const [pinMsg, setPinMsg] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [copyMsg, setCopyMsg] = useState('');
   const [activeTab, setActiveTab] = useState('account');
   const [accountInfo, setAccountInfo] = useState({ status: 'Active', expDate: 'Unlimited', maxConnections: 1, activeCons: 0, username: 'N/A', createdAt: 'N/A', isTrial: false });
   const [vpnEnabled, setVpnEnabled] = useState(() => localStorage.getItem('dash_vpn_enabled') === 'true');
@@ -1288,15 +1289,40 @@ function SettingsScreen({ onBack, api }) {
     setTimeout(() => setPinMsg(''), 3000);
   };
 
-  const handleVpnSave = () => {
+  const handleVpnSave = async () => {
     localStorage.setItem('dash_vpn_enabled', vpnEnabled.toString());
     localStorage.setItem('dash_vpn_protocol', vpnProtocol);
     localStorage.setItem('dash_vpn_server', vpnServer);
     localStorage.setItem('dash_vpn_port', vpnPort);
     localStorage.setItem('dash_vpn_username', vpnUsername);
     localStorage.setItem('dash_vpn_password', vpnPassword);
-    setVpnMsg('VPN settings saved successfully!');
-    setTimeout(() => setVpnMsg(''), 3000);
+
+    // Apply proxy in Electron
+    if (window.dashPlayer?.isElectron && window.dashPlayer?.setProxy) {
+      if (vpnEnabled && vpnServer && vpnPort) {
+        const proxyProto = vpnProtocol === 'socks5' ? 'socks5' : vpnProtocol === 'http' ? 'http' : 'socks5';
+        const result = await window.dashPlayer.setProxy({
+          protocol: proxyProto,
+          server: vpnServer,
+          port: vpnPort,
+          username: vpnUsername,
+          password: vpnPassword,
+        });
+        if (result.success) {
+          setVpnMsg('VPN proxy connected! All traffic is now routed through ' + vpnServer);
+        } else {
+          setVpnMsg('Failed to set proxy: ' + (result.error || 'Unknown error'));
+        }
+      } else if (!vpnEnabled) {
+        await window.dashPlayer.clearProxy();
+        setVpnMsg('VPN disconnected. Direct connection restored.');
+      } else {
+        setVpnMsg('VPN settings saved. Enter server and port to connect.');
+      }
+    } else {
+      setVpnMsg('VPN settings saved successfully!');
+    }
+    setTimeout(() => setVpnMsg(''), 5000);
   };
 
   const handleResetDeviceKey = () => {
@@ -1412,7 +1438,22 @@ function SettingsScreen({ onBack, api }) {
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Enable VPN</span>
                   <button
                     className={`settings-btn ${vpnEnabled ? 'settings-btn-danger' : 'settings-btn-primary'}`}
-                    onClick={() => { const newVal = !vpnEnabled; setVpnEnabled(newVal); localStorage.setItem('dash_vpn_enabled', newVal.toString()); }}
+                    onClick={async () => {
+                      const newVal = !vpnEnabled;
+                      setVpnEnabled(newVal);
+                      localStorage.setItem('dash_vpn_enabled', newVal.toString());
+                      if (window.dashPlayer?.isElectron && window.dashPlayer?.setProxy) {
+                        if (newVal && vpnServer && vpnPort) {
+                          const proxyProto = vpnProtocol === 'socks5' ? 'socks5' : vpnProtocol === 'http' ? 'http' : 'socks5';
+                          await window.dashPlayer.setProxy({ protocol: proxyProto, server: vpnServer, port: vpnPort, username: vpnUsername, password: vpnPassword });
+                          setVpnMsg('VPN proxy connected!');
+                        } else if (!newVal) {
+                          await window.dashPlayer.clearProxy();
+                          setVpnMsg('VPN disconnected.');
+                        }
+                        setTimeout(() => setVpnMsg(''), 3000);
+                      }
+                    }}
                   >
                     {vpnEnabled ? 'Disable' : 'Enable'}
                   </button>
@@ -1430,6 +1471,8 @@ function SettingsScreen({ onBack, api }) {
                       className="header-sort-select"
                       style={{ width: '100%', padding: '10px 14px', fontSize: 13 }}
                     >
+                      <option value="socks5">SOCKS5 Proxy</option>
+                      <option value="http">HTTP Proxy</option>
                       <option value="openvpn">OpenVPN (UDP)</option>
                       <option value="openvpn_tcp">OpenVPN (TCP)</option>
                       <option value="wireguard">WireGuard</option>
@@ -1500,10 +1543,21 @@ function SettingsScreen({ onBack, api }) {
               <div className="settings-card">
                 <h3 className="settings-card-title">Device Information</h3>
                 <div className="settings-device-info">
-                  <div className="settings-device-row"><span className="settings-device-label">MAC Address</span><span className="settings-device-value">{device.mac}</span></div>
-                  <div className="settings-device-row"><span className="settings-device-label">Device Key</span><span className="settings-device-value">{device.key}</span></div>
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">MAC Address</span>
+                    <span className="settings-device-value settings-device-copyable" onClick={() => { navigator.clipboard.writeText(device.mac); setCopyMsg('MAC copied!'); setTimeout(() => setCopyMsg(''), 2000); }}>
+                      {device.mac} <span className="settings-copy-icon">&#128203;</span>
+                    </span>
+                  </div>
+                  <div className="settings-device-row">
+                    <span className="settings-device-label">Device Key</span>
+                    <span className="settings-device-value settings-device-copyable" onClick={() => { navigator.clipboard.writeText(device.key); setCopyMsg('Key copied!'); setTimeout(() => setCopyMsg(''), 2000); }}>
+                      {device.key} <span className="settings-copy-icon">&#128203;</span>
+                    </span>
+                  </div>
                   <div className="settings-device-row"><span className="settings-device-label">App Version</span><span className="settings-device-value">2.0.0</span></div>
                 </div>
+                {copyMsg && <p className="settings-msg success" style={{ marginTop: 8 }}>{copyMsg}</p>}
               </div>
               <div className="settings-card">
                 <h3 className="settings-card-title">Reset Device Key</h3>
@@ -2957,6 +3011,22 @@ export default function App() {
       setApi(createXtreamApi(credentials.url, credentials.username, credentials.password));
     }
   }, [credentials]);
+
+  // Re-apply VPN proxy on startup (Electron only)
+  useEffect(() => {
+    if (window.dashPlayer?.isElectron && window.dashPlayer?.setProxy) {
+      const vpnOn = localStorage.getItem('dash_vpn_enabled') === 'true';
+      const server = localStorage.getItem('dash_vpn_server') || '';
+      const port = localStorage.getItem('dash_vpn_port') || '';
+      const proto = localStorage.getItem('dash_vpn_protocol') || 'socks5';
+      const user = localStorage.getItem('dash_vpn_username') || '';
+      const pass = localStorage.getItem('dash_vpn_password') || '';
+      if (vpnOn && server && port) {
+        const proxyProto = proto === 'socks5' ? 'socks5' : proto === 'http' ? 'http' : 'socks5';
+        window.dashPlayer.setProxy({ protocol: proxyProto, server, port, username: user, password: pass });
+      }
+    }
+  }, []);
 
   // Fetch content stats for home screen
   useEffect(() => {

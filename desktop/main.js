@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session } = require('electron');
+const { app, BrowserWindow, session, ipcMain } = require('electron');
 const path = require('path');
 
 // Set custom user agent
@@ -48,6 +48,35 @@ function createWindow() {
 
   return win;
 }
+
+// IPC handlers for proxy/VPN
+ipcMain.handle('set-proxy', async (event, config) => {
+  try {
+    // config: { protocol: 'socks5'|'http', server: string, port: string, username?: string, password?: string }
+    let proxyUrl;
+    if (config.username && config.password) {
+      proxyUrl = `${config.protocol}://${config.username}:${config.password}@${config.server}:${config.port}`;
+    } else {
+      proxyUrl = `${config.protocol}://${config.server}:${config.port}`;
+    }
+    await session.defaultSession.setProxy({ proxyRules: proxyUrl });
+    console.log('Proxy set:', proxyUrl.replace(/:[^:@]+@/, ':***@'));
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to set proxy:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('clear-proxy', async () => {
+  try {
+    await session.defaultSession.setProxy({ proxyRules: '' });
+    console.log('Proxy cleared');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();

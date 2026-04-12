@@ -1,8 +1,10 @@
 // Preload script - runs in renderer process before web content loads
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('dashPlayer', {
   platform: process.platform,
-  version: '1.0.0',
+  version: '2.5.1',
   isElectron: true,
+  setProxy: (config) => ipcRenderer.invoke('set-proxy', config),
+  clearProxy: () => ipcRenderer.invoke('clear-proxy'),
 });
