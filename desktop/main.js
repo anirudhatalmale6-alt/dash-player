@@ -164,12 +164,13 @@ function ensureLocalServer() {
       stopFfmpeg();
 
       const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
+      const subCount = parseInt(url.searchParams.get('subs') || '0');
 
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-        '-probesize', '10000000',      // 10MB probe for better stream detection
-        '-analyzeduration', '5000000', // 5 seconds analysis
+        '-probesize', isLive ? '10000000' : '50000000',
+        '-analyzeduration', isLive ? '5000000' : '15000000',
         '-i', sourceUrl,
         '-map', '0:v:0?',             // ? = optional, won't fail if missing
         '-map', `0:a:${audioTrack}?`,
@@ -181,6 +182,18 @@ function ensureLocalServer() {
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1',
       ];
+
+      // For VOD with subtitles: extract subtitle tracks to temp files simultaneously
+      // This uses the SAME FFmpeg connection - no extra connections to IPTV server!
+      const subTmpFiles = [];
+      if (!isLive && subCount > 0) {
+        for (let i = 0; i < subCount; i++) {
+          const tmpFile = path.join(os.tmpdir(), `dashplayer-sub-${Date.now()}-${i}.vtt`);
+          args.push('-map', `0:s:${i}?`, '-c:s', 'webvtt', '-y', tmpFile);
+          subTmpFiles.push(tmpFile);
+        }
+        console.log(`[FFmpeg] Also extracting ${subCount} subtitle tracks to temp files`);
+      }
 
       ffmpegProcess = spawn(ffmpegPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -219,6 +232,15 @@ function ensureLocalServer() {
           res.end('FFmpeg failed to produce output');
         } else {
           res.end();
+        }
+        // Cache any extracted subtitle files
+        for (let i = 0; i < subTmpFiles.length; i++) {
+          const f = subTmpFiles[i];
+          if (fs.existsSync(f) && fs.statSync(f).size > 10) {
+            const ck = `${sourceUrl}::${i}`;
+            subtitleCache.set(ck, { ready: true, path: f });
+            console.log(`[FFmpeg] Subtitle track ${i} cached: ${f} (${fs.statSync(f).size} bytes)`);
+          }
         }
         ffmpegProcess = null;
       });
@@ -393,11 +415,12 @@ ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
 });
 
 // Get local transcode URL (browser will connect to our local server)
-ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack }) => {
+ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack, subtitleCount }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
   const port = await ensureLocalServer();
-  const transUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&audio=${audioTrack || 0}&mode=transcode`;
-  console.log('[FFmpeg] Transcode URL:', transUrl);
+  const subs = subtitleCount || 0;
+  const transUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&audio=${audioTrack || 0}&mode=transcode&subs=${subs}`;
+  console.log('[FFmpeg] Transcode URL:', transUrl, `(subs: ${subs})`);
   return { success: true, url: transUrl };
 });
 

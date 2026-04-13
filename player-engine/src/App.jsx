@@ -1246,6 +1246,51 @@ function VideoPlayer({ url, onClose, title, inline }) {
     if (trackId >= 0 && window.dashPlayer?.ffmpegSubtitleUrl && url) {
       console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
       setCurrentSubText('Loading subtitles...');
+
+      // If using FFmpeg transcode, restart it with subtitle extraction included
+      // This uses the SAME connection - no extra connections!
+      if (usingFfmpeg && window.dashPlayer?.ffmpegTranscodeUrl) {
+        console.log('[DashPlayer] Restarting FFmpeg transcode with subtitle extraction');
+        const isLive = url.includes('/live/') || url.includes('/timeshift/');
+        const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
+        const subCount = subtitleTracks.length || 1;
+        const currentTime = videoRef.current?.currentTime || 0;
+        const result = await window.dashPlayer.ffmpegTranscodeUrl({
+          url: streamUrl, audioTrack: selectedAudio, subtitleCount: subCount
+        });
+        if (result.success && result.url && videoRef.current) {
+          videoRef.current.src = result.url;
+          videoRef.current.load();
+          videoRef.current.play().catch(() => {});
+          // Wait for subtitles to be extracted and cached, then load them
+          const waitForSub = async (attempts) => {
+            for (let i = 0; i < attempts; i++) {
+              await new Promise(r => setTimeout(r, 3000)); // check every 3s
+              if (!mountedRef.current) return;
+              const subResult = await window.dashPlayer.ffmpegSubtitleUrl({ url: streamUrl, subIndex: trackId });
+              if (subResult.success && subResult.url) {
+                console.log('[DashPlayer] Subtitle cached from transcode, fetching...');
+                try {
+                  const resp = await fetch(subResult.url);
+                  const vttText = await resp.text();
+                  if (vttText.length > 20 && vttText.includes('WEBVTT')) {
+                    const cues = parseVTT(vttText);
+                    if (cues.length > 0) {
+                      subtitleCuesRef.current = cues;
+                      startSubtitleSync(cues);
+                      return;
+                    }
+                  }
+                } catch(e) { console.log('[DashPlayer] Sub fetch error:', e); }
+              }
+            }
+            setCurrentSubText(''); // give up after all attempts
+          };
+          waitForSub(20); // check for up to 60 seconds
+          return;
+        }
+      }
+
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
       if (result.success && result.url) {
         try {
