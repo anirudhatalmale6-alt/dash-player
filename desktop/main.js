@@ -91,8 +91,10 @@ function ensureLocalServer() {
         const subIndex = url.searchParams.get('subIndex') || '0';
         const cacheKey = `${sourceUrl}::${subIndex}`;
         console.log(`[FFmpeg] Extracting subtitle track ${subIndex} from:`, sourceUrl);
+        const subUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
         const proc = spawn(ffmpegPath, [
           '-hide_banner', '-loglevel', 'info',
+          '-user_agent', subUa,
           '-probesize', '100000000',      // 100MB probe for large MKV
           '-analyzeduration', '30000000', // 30 seconds analysis
           '-i', sourceUrl,
@@ -166,8 +168,12 @@ function ensureLocalServer() {
       const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
       const subCount = parseInt(url.searchParams.get('subs') || '0');
 
+      // Use browser-like User-Agent so IPTV server counts FFmpeg as same client
+      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
+
       const args = [
         '-hide_banner', '-loglevel', 'info',
+        '-user_agent', userAgent,
         '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
         '-probesize', isLive ? '10000000' : '50000000',
         '-analyzeduration', isLive ? '5000000' : '15000000',
@@ -346,8 +352,10 @@ ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
 
   return new Promise((resolve) => {
     // ffmpeg -i <url> exits with error (no output specified) but prints stream info to stderr
+    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
     execFile(ffmpegPath, [
       '-hide_banner',
+      '-user_agent', ua,
       '-probesize', '5000000',       // 5MB - just enough for metadata
       '-analyzeduration', '3000000', // 3 seconds
       '-i', url,

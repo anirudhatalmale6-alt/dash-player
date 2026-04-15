@@ -1135,12 +1135,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
     probedRef.current = false;
 
     // Build the format chain based on stream type
-    // For live: HLS first (most channels), then FFmpeg (handles MP2/all codecs) - fast 2-step
+    // For live: FFmpeg FIRST (handles all codecs, single connection - critical for 1-connection accounts)
+    // then HLS as fallback if FFmpeg not available
     // For VOD: Direct first (browser native), then FFmpeg (MKV, dual audio, subtitles)
     const steps = isLive ? [
+      () => tryFfmpeg(), // FFmpeg first - single connection, handles MP2/MP3/AAC
       () => tryHls(baseUrl + '.m3u8'),
-      () => tryFfmpeg(), // FFmpeg transcodes MP2→AAC, handles all codecs instantly
-      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'), // fallback if no FFmpeg
+      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'),
       () => tryDirect(url),
     ] : [
       () => tryDirect(url),
@@ -1157,7 +1158,12 @@ function VideoPlayer({ url, onClose, title, inline }) {
         return;
       }
       if (!mountedRef.current) return;
-      steps[currentStep]();
+      // Delay between steps to ensure previous connection fully closes
+      // Critical for 1-connection IPTV accounts
+      setTimeout(() => {
+        if (!mountedRef.current) return;
+        steps[currentStep]();
+      }, 800);
     };
 
     // Start the chain
