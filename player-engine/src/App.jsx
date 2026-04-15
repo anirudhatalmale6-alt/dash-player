@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { mockData } from './services/xtreamApi';
 import axios from 'axios';
-import mpegts from 'mpegts.js';
-import Hls from 'hls.js';
 import { QRCodeSVG } from 'qrcode.react';
 import './styles.css';
 
@@ -787,8 +785,6 @@ function ActivationScreen({ onActivated }) {
 /* ══════ VIDEO PLAYER COMPONENT ══════ */
 function VideoPlayer({ url, onClose, title, inline }) {
   const videoRef = useRef(null);
-  const playerRef = useRef(null);
-  const hlsRef = useRef(null);
   const retryTimerRef = useRef(null);
   const stallTimerRef = useRef(null);
   const [error, setError] = useState(null);
@@ -810,17 +806,6 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const cleanup = useCallback(() => {
     if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
-    if (playerRef.current) {
-      try { playerRef.current.pause(); } catch(e) {}
-      try { playerRef.current.unload(); } catch(e) {}
-      try { playerRef.current.detachMediaElement(); } catch(e) {}
-      try { playerRef.current.destroy(); } catch(e) {}
-      playerRef.current = null;
-    }
-    if (hlsRef.current) {
-      try { hlsRef.current.destroy(); } catch(e) {}
-      hlsRef.current = null;
-    }
     // Stop FFmpeg transcode if running
     if (window.dashPlayer?.ffmpegStop) {
       window.dashPlayer.ffmpegStop().catch(() => {});
@@ -854,7 +839,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           stallCount++;
           if (stallCount >= 3) {
             stallCount = 0;
-            if (playerRef.current && isLive) {
+            if (isLive) {
               try {
                 const buffered = video.buffered;
                 if (buffered.length > 0) video.currentTime = buffered.end(buffered.length - 1) - 0.5;
@@ -873,305 +858,103 @@ function VideoPlayer({ url, onClose, title, inline }) {
       setupStallDetection();
     };
 
-    // Detect audio and subtitle tracks
-    const detectTracks = () => {
-      if (!mountedRef.current || !video) return;
-      // Audio tracks from HLS.js
-      if (hlsRef.current && hlsRef.current.audioTracks && hlsRef.current.audioTracks.length > 1) {
-        const tracks = hlsRef.current.audioTracks.map((t, i) => ({
-          id: i, label: t.name || t.lang || `Audio ${i + 1}`, lang: t.lang || ''
-        }));
-        setAudioTracks(tracks);
-        setSelectedAudio(hlsRef.current.audioTrack);
-      }
-      // Native audio tracks (for direct/mpegts playback)
-      else if (video.audioTracks && video.audioTracks.length > 1) {
-        const tracks = [];
-        for (let i = 0; i < video.audioTracks.length; i++) {
-          const t = video.audioTracks[i];
-          tracks.push({ id: i, label: t.label || t.language || `Audio ${i + 1}`, lang: t.language || '' });
-        }
-        setAudioTracks(tracks);
-        const active = tracks.findIndex((_, i) => video.audioTracks[i].enabled);
-        if (active >= 0) setSelectedAudio(active);
-      }
-      // Subtitle / text tracks
-      if (video.textTracks && video.textTracks.length > 0) {
-        const tracks = [];
-        for (let i = 0; i < video.textTracks.length; i++) {
-          const t = video.textTracks[i];
-          if (t.kind === 'subtitles' || t.kind === 'captions') {
-            tracks.push({ id: i, label: t.label || t.language || `Subtitle ${i + 1}`, lang: t.language || '' });
-          }
-        }
-        setSubtitleTracks(tracks);
-      }
-      // HLS.js subtitle tracks
-      if (hlsRef.current && hlsRef.current.subtitleTracks && hlsRef.current.subtitleTracks.length > 0) {
-        const tracks = hlsRef.current.subtitleTracks.map((t, i) => ({
-          id: i, label: t.name || t.lang || `Subtitle ${i + 1}`, lang: t.lang || ''
-        }));
-        setSubtitleTracks(tracks);
-        setSelectedSubtitle(hlsRef.current.subtitleTrack);
-      }
-    };
-
-    // Poll for tracks a few seconds after playback starts
-    const trackDetectTimer = setTimeout(detectTracks, 2000);
-    const trackDetectTimer2 = setTimeout(detectTracks, 5000);
-
-    // Format chain: each format tried exactly once, short timeouts for fast switching
-    let currentStep = 0;
     let playbackStarted = false;
 
-    const createMpegTsPlayer = (streamUrl, label, videoOnly = false) => {
-      if (!mpegts.isSupported() || !mountedRef.current) return false;
-      setCurrentFormat(videoOnly ? `${label} (video only)` : label);
-      console.log(`[DashPlayer] Trying ${label}${videoOnly ? ' (video only)' : ''}: ${streamUrl}`);
-      const player = mpegts.createPlayer({
-        type: 'mpegts', isLive, url: streamUrl,
-        hasAudio: !videoOnly, hasVideo: true,
-      }, {
-        enableWorker: true, enableStashBuffer: true, stashInitialSize: 384,
-        lazyLoad: false, lazyLoadMaxDuration: isLive ? 30 : 300,
-        liveBufferLatencyChasing: isLive,
-        liveBufferLatencyMaxLatency: isLive ? 5 : 60,
-        liveBufferLatencyMinRemain: isLive ? 0.5 : 3,
-        liveSyncTargetLatency: isLive ? 2 : undefined,
-        autoCleanupSourceBuffer: true, autoCleanupMaxBackwardDuration: 30,
-        autoCleanupMinBackwardDuration: 15, seekType: 'range',
-        fixAudioTimestampGap: true, accurateSeek: true,
-      });
-      playerRef.current = player;
-      player.attachMediaElement(video);
-      player.load();
-      let errorTriggered = false;
-      player.on(mpegts.Events.ERROR, (type, detail, info) => {
-        console.log(`[DashPlayer] ${label} error:`, type, detail, info);
-        if (errorTriggered) return;
-        errorTriggered = true;
-        cleanup();
-        nextStep();
-      });
-      video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
-      video.addEventListener('playing', () => { playbackStarted = true; onPlaying(); }, { once: true });
-      setTimeout(() => { if (mountedRef.current && video) video.play().catch(() => {}); }, 200);
-      retryTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current || playbackStarted) return;
-        if (video.readyState < 2 && !errorTriggered) {
-          console.log(`[DashPlayer] ${label}${videoOnly ? ' (video only)' : ''} timeout, readyState=${video.readyState}`);
-          errorTriggered = true; cleanup();
-          nextStep();
-        }
-      }, 4000);
-      return true;
-    };
+    // Don't auto-probe on mount - probe on demand when user opens track menu
+    probedRef.current = false;
 
-    const tryHls = (hlsUrl) => {
-      if (!Hls.isSupported() || !mountedRef.current) return false;
-      setCurrentFormat('HLS');
-      console.log(`[DashPlayer] Trying HLS: ${hlsUrl}`);
-      const hls = new Hls({
-        enableWorker: true, maxBufferLength: isLive ? 10 : 60,
-        maxMaxBufferLength: isLive ? 30 : 300, startLevel: -1,
-        liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6,
-      });
-      hlsRef.current = hls;
-      hls.loadSource(hlsUrl);
-      hls.attachMedia(video);
-      let hlsErrorTriggered = false;
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (!mountedRef.current) return;
+    // FFmpeg-only player: single connection, all codecs, all formats
+    const streamUrl = isLive ? baseUrl + '.ts' : url;
+
+    const startFfmpeg = async (audioTrack = 0) => {
+      if (!window.dashPlayer?.ffmpegTranscodeUrl) {
+        setError('FFmpeg not available - please install FFmpeg');
         setLoading(false);
-        video.play().catch(() => {});
-        setupStallDetection();
-        setTimeout(detectTracks, 500);
-        // Black screen detection: if no frames after 1.5s, move on (fast fallback to FFmpeg for MP2)
-        if (isLive) {
-          setTimeout(() => {
-            if (!mountedRef.current || playbackStarted) return;
-            if (video && video.currentTime < 0.5 && video.readyState < 3) {
-              console.log('[DashPlayer] HLS connected but no video frames');
-              hlsErrorTriggered = true; cleanup();
-              nextStep();
-            }
-          }, 1500);
-        }
-      });
-      video.addEventListener('playing', () => { playbackStarted = true; }, { once: true });
-      video.addEventListener('timeupdate', () => { if (video.currentTime > 0.5) playbackStarted = true; }, { once: true });
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        console.log('[DashPlayer] HLS error:', data.type, data.details, data.fatal);
-        if (data.fatal && !hlsErrorTriggered) {
-          hlsErrorTriggered = true; cleanup();
-          nextStep();
-        }
-      });
-      retryTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current || playbackStarted) return;
-        if (video.readyState < 2 && !hlsErrorTriggered) {
-          console.log('[DashPlayer] HLS timeout');
-          hlsErrorTriggered = true; cleanup();
-          nextStep();
-        }
-      }, isLive ? 2500 : 4000); // faster timeout for live = quick FFmpeg fallback
-      return true;
-    };
-
-    const tryDirect = (directUrl) => {
-      if (!mountedRef.current) return false;
-      setCurrentFormat('Direct');
-      console.log(`[DashPlayer] Trying Direct: ${directUrl}`);
-      video.src = directUrl;
-      video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
-      video.addEventListener('playing', () => { playbackStarted = true; onPlaying(); }, { once: true });
-      video.addEventListener('error', (e) => {
-        console.log('[DashPlayer] Direct error:', e);
-        if (!mountedRef.current || playbackStarted) return;
-        cleanup();
-        nextStep();
-      }, { once: true });
-      video.play().catch(() => {});
-      retryTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current || playbackStarted) return;
-        if (video.readyState < 2) {
-          console.log('[DashPlayer] Direct timeout');
-          cleanup();
-          nextStep();
-        }
-      }, 4000);
-      return true;
-    };
-
-    // FFmpeg transcode fallback - transcodes audio to AAC so browser can play it
-    const tryFfmpeg = async () => {
-      if (!window.dashPlayer?.ffmpegTranscodeUrl) return nextStep();
-      const streamUrl = isLive ? baseUrl + '.ts' : url;
-      console.log('[DashPlayer] Trying FFmpeg transcode:', streamUrl);
+        return;
+      }
+      console.log('[DashPlayer] FFmpeg playing:', streamUrl);
       setCurrentFormat('FFmpeg');
       try {
-        const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack: 0 });
-        if (!result.success || !result.url) { console.log('[DashPlayer] FFmpeg URL failed'); nextStep(); return; }
+        const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack });
+        if (!result.success || !result.url) {
+          console.log('[DashPlayer] FFmpeg URL failed');
+          setError('Failed to start playback');
+          setLoading(false);
+          return;
+        }
         console.log('[DashPlayer] FFmpeg local URL:', result.url);
         setUsingFfmpeg(true);
-        // Stop mpegts/hls players but DON'T stop ffmpeg or reset video
-        if (playerRef.current) {
-          try { playerRef.current.pause(); } catch(e) {}
-          try { playerRef.current.unload(); } catch(e) {}
-          try { playerRef.current.detachMediaElement(); } catch(e) {}
-          try { playerRef.current.destroy(); } catch(e) {}
-          playerRef.current = null;
-        }
-        if (hlsRef.current) {
-          try { hlsRef.current.destroy(); } catch(e) {}
-          hlsRef.current = null;
-        }
         video.src = result.url;
         video.load();
-        let ffmpegErrorHandled = false;
+
         video.addEventListener('loadeddata', () => {
           console.log('[DashPlayer] FFmpeg loadeddata, readyState:', video.readyState);
           playbackStarted = true;
           onPlaying();
         }, { once: true });
         video.addEventListener('canplay', () => {
-          console.log('[DashPlayer] FFmpeg canplay');
           playbackStarted = true;
           onPlaying();
         }, { once: true });
-        const handleFfmpegError = async (e) => {
+
+        // Error handling with auto-reconnect for live
+        let reconnecting = false;
+        const handleError = async () => {
           const errMsg = video.error?.message || '';
           console.log('[DashPlayer] FFmpeg playback error:', errMsg);
-          // If format error, try to fetch the URL to see the actual FFmpeg error
-          if (errMsg.includes('Format error') || errMsg.includes('MEDIA_ELEMENT_ERROR')) {
-            try {
-              const errResp = await fetch(result.url);
-              const errText = await errResp.text();
-              console.log('[DashPlayer] FFmpeg server error details:', errText.substring(0, 500));
-            } catch(fe) {}
-          }
-          // PIPELINE_ERROR_DECODE on live streams = reconnect FFmpeg
-          if (playbackStarted && isLive && errMsg.includes('PIPELINE_ERROR_DECODE')) {
-            console.log('[DashPlayer] FFmpeg decode error on live, reconnecting...');
-            if (ffmpegErrorHandled) return;
-            ffmpegErrorHandled = true;
-            // Restart FFmpeg stream
-            window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack: 0 }).then(r2 => {
-              if (r2.success && r2.url && mountedRef.current) {
-                video.src = r2.url;
-                video.load();
-                video.play().catch(() => {});
-                ffmpegErrorHandled = false;
-                video.addEventListener('error', handleFfmpegError, { once: true });
-              }
-            });
+
+          // Log actual FFmpeg error
+          try {
+            const errResp = await fetch(result.url);
+            const errText = await errResp.text();
+            console.log('[DashPlayer] FFmpeg error details:', errText.substring(0, 500));
+          } catch(fe) {}
+
+          // Auto-reconnect for live decode errors
+          if (playbackStarted && isLive && !reconnecting) {
+            reconnecting = true;
+            console.log('[DashPlayer] Reconnecting FFmpeg...');
+            const r2 = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack });
+            if (r2.success && r2.url && mountedRef.current) {
+              video.src = r2.url;
+              video.load();
+              video.play().catch(() => {});
+              reconnecting = false;
+              video.addEventListener('error', handleError, { once: true });
+            } else {
+              setError('Stream connection lost');
+            }
             return;
           }
-          if (!mountedRef.current || (playbackStarted && !isLive)) return;
+
           if (!playbackStarted) {
-            setUsingFfmpeg(false);
-            nextStep();
+            setError('Stream unavailable - check FFmpeg installation');
+            setLoading(false);
           }
         };
-        video.addEventListener('error', handleFfmpegError, { once: true });
+        video.addEventListener('error', handleError, { once: true });
+
         setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
+
+        // Timeout
         retryTimerRef.current = setTimeout(() => {
           if (!mountedRef.current || playbackStarted) return;
-          console.log('[DashPlayer] FFmpeg timeout, readyState:', video.readyState, 'networkState:', video.networkState);
-          if (video.readyState < 2) {
-            setUsingFfmpeg(false);
-            nextStep();
-          }
-        }, 12000);
+          console.log('[DashPlayer] FFmpeg timeout, readyState:', video.readyState);
+          setError('Stream timeout - try another channel');
+          setLoading(false);
+        }, 15000);
       } catch (e) {
         console.log('[DashPlayer] FFmpeg error:', e);
-        setUsingFfmpeg(false);
-        nextStep();
-      }
-    };
-
-    // Don't auto-probe on mount - probe on demand when user opens track menu
-    // This avoids opening extra connections to the IPTV server
-    probedRef.current = false;
-
-    // Build the format chain based on stream type
-    // For live: FFmpeg FIRST (handles all codecs, single connection - critical for 1-connection accounts)
-    // then HLS as fallback if FFmpeg not available
-    // For VOD: Direct first (browser native), then FFmpeg (MKV, dual audio, subtitles)
-    const steps = isLive ? [
-      () => tryFfmpeg(), // FFmpeg first - single connection, handles MP2/MP3/AAC
-      () => tryHls(baseUrl + '.m3u8'),
-      () => createMpegTsPlayer(baseUrl + '.ts', 'MPEG-TS'),
-      () => tryDirect(url),
-    ] : [
-      () => tryDirect(url),
-      () => tryFfmpeg(), // FFmpeg for MKV, codec compatibility, audio track selection
-      () => createMpegTsPlayer(url, 'MPEG-TS'),
-      () => tryHls(baseUrl + '.m3u8'),
-    ];
-
-    const nextStep = () => {
-      currentStep++;
-      if (currentStep >= steps.length) {
-        setError('Stream unavailable - try another channel');
+        setError('Playback error: ' + e.message);
         setLoading(false);
-        return;
       }
-      if (!mountedRef.current) return;
-      // Delay between steps to ensure previous connection fully closes
-      // Critical for 1-connection IPTV accounts
-      setTimeout(() => {
-        if (!mountedRef.current) return;
-        steps[currentStep]();
-      }, 800);
     };
 
-    // Start the chain
-    steps[0]();
+    // Start FFmpeg player
+    startFfmpeg(0);
 
     return () => {
       mountedRef.current = false; // mark as unmounted BEFORE cleanup to prevent error handlers from firing
-      clearTimeout(trackDetectTimer); clearTimeout(trackDetectTimer2);
       cleanup();
       if (video) { video.src = ''; video.load(); }
       mountedRef.current = true; // reset for next mount
@@ -1192,12 +975,6 @@ function VideoPlayer({ url, onClose, title, inline }) {
         videoRef.current.src = result.url;
         if (!isLive && currentTime > 0) videoRef.current.currentTime = currentTime;
         videoRef.current.play().catch(() => {});
-      }
-    } else if (hlsRef.current && hlsRef.current.audioTracks && hlsRef.current.audioTracks.length > 1) {
-      hlsRef.current.audioTrack = trackId;
-    } else if (videoRef.current && videoRef.current.audioTracks && videoRef.current.audioTracks.length > 1) {
-      for (let i = 0; i < videoRef.current.audioTracks.length; i++) {
-        videoRef.current.audioTracks[i].enabled = (i === trackId);
       }
     }
   };
