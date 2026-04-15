@@ -227,9 +227,10 @@ function ensureLocalServer() {
       ffmpegProcess.on('exit', (code) => {
         console.log('[FFmpeg] Process exited with code', code);
         if (!headersSent) {
-          console.log('[FFmpeg] No output produced! stderr:', stderrBuf.slice(-500));
+          const errDetail = stderrBuf.slice(-800).trim();
+          console.log('[FFmpeg] No output produced! stderr:', errDetail);
           res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-          res.end('FFmpeg failed to produce output');
+          res.end('FFmpeg error: ' + errDetail);
         } else {
           res.end();
         }
@@ -456,8 +457,16 @@ ipcMain.handle('ffmpeg-stop', () => {
 app.whenReady().then(() => {
   ffmpegPath = findBinary('ffmpeg');
 
-  // Start the local server immediately if FFmpeg is available
-  if (ffmpegPath) ensureLocalServer();
+  // Log FFmpeg version for debugging
+  if (ffmpegPath) {
+    try {
+      const ver = require('child_process').execFileSync(ffmpegPath, ['-version'], { timeout: 5000, encoding: 'utf8' });
+      console.log('[FFmpeg] Version:', ver.split('\n')[0]);
+    } catch(e) { console.log('[FFmpeg] Version check failed:', e.message); }
+    ensureLocalServer();
+  } else {
+    console.log('[FFmpeg] WARNING: FFmpeg not found! Transcode features unavailable.');
+  }
 
   createWindow();
 

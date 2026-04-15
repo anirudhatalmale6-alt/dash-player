@@ -1079,9 +1079,17 @@ function VideoPlayer({ url, onClose, title, inline }) {
           playbackStarted = true;
           onPlaying();
         }, { once: true });
-        const handleFfmpegError = (e) => {
+        const handleFfmpegError = async (e) => {
           const errMsg = video.error?.message || '';
           console.log('[DashPlayer] FFmpeg playback error:', errMsg);
+          // If format error, try to fetch the URL to see the actual FFmpeg error
+          if (errMsg.includes('Format error') || errMsg.includes('MEDIA_ELEMENT_ERROR')) {
+            try {
+              const errResp = await fetch(result.url);
+              const errText = await errResp.text();
+              console.log('[DashPlayer] FFmpeg server error details:', errText.substring(0, 500));
+            } catch(fe) {}
+          }
           // PIPELINE_ERROR_DECODE on live streams = reconnect FFmpeg
           if (playbackStarted && isLive && errMsg.includes('PIPELINE_ERROR_DECODE')) {
             console.log('[DashPlayer] FFmpeg decode error on live, reconnecting...');
