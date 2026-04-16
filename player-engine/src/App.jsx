@@ -952,27 +952,21 @@ function VideoPlayer({ url, onClose, title, inline }) {
         // Error handling with auto-reconnect for live
         let reconnecting = false;
         const handleError = async () => {
+          if (!mountedRef.current) return;
           const errMsg = video.error?.message || '';
           console.log('[DashPlayer] FFmpeg playback error:', errMsg);
 
-          // Log actual FFmpeg error
-          try {
-            const errResp = await fetch(result.url);
-            const errText = await errResp.text();
-            console.log('[DashPlayer] FFmpeg error details:', errText.substring(0, 500));
-          } catch(fe) {}
-
-          // Auto-reconnect for live decode errors
+          // Auto-reconnect for live decode errors (max 1 reconnect)
           if (playbackStarted && isLive && !reconnecting) {
             reconnecting = true;
             console.log('[DashPlayer] Reconnecting FFmpeg...');
+            // Stop current first
+            if (window.dashPlayer?.ffmpegStop) await window.dashPlayer.ffmpegStop().catch(() => {});
             const r2 = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack });
             if (r2.success && r2.url && mountedRef.current) {
               video.src = r2.url;
               video.load();
               video.play().catch(() => {});
-              reconnecting = false;
-              video.addEventListener('error', handleError, { once: true });
             } else {
               setError('Stream connection lost');
             }
@@ -980,7 +974,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           }
 
           if (!playbackStarted) {
-            setError('Stream unavailable - check FFmpeg installation');
+            setError('Stream unavailable');
             setLoading(false);
           }
         };
@@ -1002,8 +996,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
       }
     };
 
-    // Start FFmpeg player (small delay to ensure previous connection is fully closed)
-    setTimeout(() => { if (mountedRef.current) startFfmpeg(0); }, 200);
+    // Start FFmpeg player
+    startFfmpeg(0);
 
     return () => {
       mountedRef.current = false; // mark as unmounted BEFORE cleanup to prevent error handlers from firing

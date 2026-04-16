@@ -49,17 +49,25 @@ let currentTranscodeResponse = null; // track active HTTP response to end it on 
 
 function stopFfmpeg() {
   if (ffmpegProcess) {
-    const pid = ffmpegProcess.pid;
+    const proc = ffmpegProcess;
+    const pid = proc.pid;
     console.log('[FFmpeg] Stopping process PID:', pid);
+    ffmpegProcess = null; // clear reference immediately to prevent double-stop
     try {
-      // On Windows, SIGKILL doesn't kill child processes. Use taskkill /T to kill process tree.
-      if (process.platform === 'win32' && pid) {
-        require('child_process').exec(`taskkill /PID ${pid} /T /F`, () => {});
-      } else {
-        ffmpegProcess.kill('SIGKILL');
-      }
-    } catch(e) { console.log('[FFmpeg] Kill error:', e.message); }
-    ffmpegProcess = null;
+      // Send 'q' to FFmpeg stdin for graceful shutdown (closes network connections properly)
+      proc.stdin.write('q\n');
+      proc.stdin.end();
+    } catch(e) {}
+    // Force kill after 300ms if it hasn't exited
+    setTimeout(() => {
+      try {
+        if (process.platform === 'win32' && pid) {
+          require('child_process').exec(`taskkill /PID ${pid} /T /F`, () => {});
+        } else {
+          proc.kill('SIGKILL');
+        }
+      } catch(e) {}
+    }, 300);
   }
   // End the current HTTP response so browser stops waiting
   if (currentTranscodeResponse) {

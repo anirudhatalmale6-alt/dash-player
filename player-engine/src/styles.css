@@ -1360,12 +1360,30 @@ video::-webkit-media-controls-panel { overflow: hidden !important; }
   .home-footer { padding: 8px 14px; font-size: 11px; }
   /* Playlists */
   .settings-container { padding: 14px; }
-  /* Categories / channel lists */
-  .live-sidebar { width: 200px; min-width: 150px; }
-  .channel-item { padding: 8px 10px; font-size: 12px; }
+  /* Section header */
+  .section-header { padding: 10px 12px; }
+  .section-title { font-size: 15px; }
+  .back-btn { padding: 6px 12px; font-size: 12px; }
+  .channel-count { font-size: 11px; }
+  /* Sidebar categories */
+  .section-sidebar { width: 180px; }
+  .sidebar-cat-item { padding: 8px 10px; font-size: 12px; }
+  /* Section body stacking */
+  .section-body { flex-direction: column; }
+  /* Live TV player area */
+  .live-player-area { flex-direction: column; }
+  .live-player-channels { width: 100%; max-height: 200px; border-left: none; border-top: 1px solid rgba(200,180,220,0.2); }
+  .live-player-video { min-height: 200px; max-height: 300px; }
+  .live-player-channel-name { font-size: 14px; }
+  .live-player-top { padding: 8px 10px; }
+  .live-epg-item { min-width: 140px; padding: 6px 10px; }
+  /* Channel items */
+  .channel-item, .ch-item { padding: 8px 10px; font-size: 12px; }
   /* Video player overlay */
   .video-player-container { width: 100vw; height: 100vh; border-radius: 0; }
   .video-element { max-height: 100vh; }
+  /* Media screen (movies/series) */
+  .media-detail-container { flex-direction: column; }
 }
 
 @media (max-width: 480px) {
@@ -1373,5 +1391,7 @@ video::-webkit-media-controls-panel { overflow: hidden !important; }
   .home-cards-main { grid-template-columns: repeat(2, 1fr); }
   .home-cards-secondary { grid-template-columns: repeat(2, 1fr); }
   .home-topbar-actions { gap: 6px; }
-  .live-sidebar { width: 160px; min-width: 120px; }
+  .section-sidebar { width: 140px; }
+  .live-player-channels { max-height: 180px; }
+  .live-player-video { min-height: 180px; }
 }
