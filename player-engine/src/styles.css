@@ -1329,3 +1329,49 @@ video::-webkit-media-controls-panel { overflow: hidden !important; }
   font-size: 13px;
   margin-top: 8px;
 }
+
+/* ═══ Mobile Responsive ═══ */
+@media (max-width: 768px) {
+  .home-topbar { padding: 10px 14px; }
+  .home-brand-logo { width: 34px; height: 34px; font-size: 16px; border-radius: 10px; }
+  .home-brand-name { font-size: 16px; }
+  .home-clock-time { font-size: 18px; }
+  .home-clock-date { font-size: 10px; }
+  .home-search-btn { padding: 8px 14px; font-size: 12px; border-radius: 10px; }
+  .home-notification-btn { width: 36px; height: 36px; border-radius: 10px; font-size: 16px; }
+  .home-content { padding: 14px 14px; }
+  .home-welcome { margin-bottom: 16px; }
+  .home-welcome-text { font-size: 22px; }
+  .home-welcome-sub { font-size: 12px; }
+  .home-stats { grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .home-stat { padding: 10px 8px; border-radius: 12px; }
+  .home-stat-icon { font-size: 18px; margin-bottom: 4px; }
+  .home-stat-value { font-size: 18px; }
+  .home-stat-label { font-size: 9px; }
+  .home-cards-main { grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .home-card { border-radius: 14px; aspect-ratio: 1; }
+  .home-card-icon { font-size: 28px; margin-bottom: 4px; }
+  .home-card-label { font-size: 11px; }
+  .home-card-count { font-size: 9px; }
+  .home-cards-secondary { grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .home-card-sm { padding: 12px 10px; border-radius: 10px; font-size: 11px; gap: 6px; }
+  .home-card-sm-icon { font-size: 16px; }
+  /* Bottom bar */
+  .home-footer { padding: 8px 14px; font-size: 11px; }
+  /* Playlists */
+  .settings-container { padding: 14px; }
+  /* Categories / channel lists */
+  .live-sidebar { width: 200px; min-width: 150px; }
+  .channel-item { padding: 8px 10px; font-size: 12px; }
+  /* Video player overlay */
+  .video-player-container { width: 100vw; height: 100vh; border-radius: 0; }
+  .video-element { max-height: 100vh; }
+}
+
+@media (max-width: 480px) {
+  .home-stats { grid-template-columns: repeat(2, 1fr); }
+  .home-cards-main { grid-template-columns: repeat(2, 1fr); }
+  .home-cards-secondary { grid-template-columns: repeat(2, 1fr); }
+  .home-topbar-actions { gap: 6px; }
+  .live-sidebar { width: 160px; min-width: 120px; }
+}

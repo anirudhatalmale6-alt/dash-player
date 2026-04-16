@@ -1374,7 +1374,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
 }
 
 /* ══════ HOME SCREEN (Interactive) ══════ */
-function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
+function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, loadingStats, statsError }) {
   const [time, setTime] = useState(new Date());
   const [device] = useState(() => getDeviceIdentity());
   const history = getWatchHistory();
@@ -1419,6 +1419,10 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats }) {
           <div className="home-welcome-text">{greeting()}</div>
           <div className="home-welcome-sub">{t('what_to_watch')}</div>
         </div>
+
+        {/* Loading / Error */}
+        {loadingStats && <div style={{ textAlign: 'center', padding: '10px 20px', color: '#7c3aed', fontSize: 14 }}>Loading content...</div>}
+        {statsError && <div style={{ textAlign: 'center', padding: '10px 20px', color: '#ef4444', fontSize: 13, background: 'rgba(239,68,68,0.08)', borderRadius: 8, margin: '0 20px 10px' }}>{statsError}</div>}
 
         {/* Quick Stats */}
         <div className="home-stats">
@@ -4419,14 +4423,19 @@ export default function App() {
   const [playerLicense, setPlayerLicense] = useState(() => getPlayerLicense());
   const [api, setApi] = useState(null);
   const [contentStats, setContentStats] = useState({ live: 0, vod: 0, series: 0, radio: 0 });
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [statsError, setStatsError] = useState('');
 
   useEffect(() => {
     if (credentials && credentials.url && credentials.username && credentials.password) {
       console.log('[DashPlayer] Creating API for:', credentials.url, 'user:', credentials.username);
       const format = credentials.output_format || 'm3u8';
       setApi(createXtreamApi(credentials.url, credentials.username, credentials.password, format));
+      setStatsError('');
     } else if (credentials) {
       console.warn('[DashPlayer] Credentials incomplete:', { url: !!credentials.url, username: !!credentials.username, password: !!credentials.password });
+      if (!credentials.password) setStatsError('Playlist password missing - please delete and re-add your playlist');
+      else if (!credentials.url) setStatsError('Playlist server URL missing');
     }
   }, [credentials]);
 
@@ -4473,6 +4482,23 @@ export default function App() {
     if (!api) { console.log('[DashPlayer] No API available, skipping stats fetch'); return; }
     const fetchStats = async () => {
       console.log('[DashPlayer] Fetching content stats...');
+      setLoadingStats(true);
+      setStatsError('');
+      // First test authentication
+      try {
+        const authTest = await api.authenticate();
+        console.log('[DashPlayer] Auth test result:', authTest ? 'OK' : 'FAILED', authTest?.user_info ? 'user_info present' : 'no user_info');
+        if (!authTest || !authTest.user_info) {
+          setStatsError('Authentication failed - check server URL, username, and password');
+          setLoadingStats(false);
+          return;
+        }
+      } catch (authErr) {
+        console.error('[DashPlayer] Auth test error:', authErr);
+        setStatsError('Cannot connect to server: ' + (authErr.message || 'unknown error'));
+        setLoadingStats(false);
+        return;
+      }
       const [live, vod, series, liveCats, radioCatsApi] = await Promise.all([
         api.getLiveStreams(),
         api.getVodStreams(),
@@ -4523,8 +4549,12 @@ export default function App() {
         series: series && Array.isArray(series) ? series.length : 0,
         radio: radioCount,
       });
+      setLoadingStats(false);
+      if ((!live || !Array.isArray(live) || live.length === 0) && (!vod || !Array.isArray(vod) || vod.length === 0)) {
+        setStatsError('Server returned empty data - playlist may have no content assigned');
+      }
     };
-    fetchStats();
+    fetchStats().catch(e => { console.error('[DashPlayer] fetchStats error:', e); setStatsError('Error loading content: ' + e.message); setLoadingStats(false); });
   }, [api]);
 
   const isTrialExpired = playerLicense.type === 'trial' && playerLicense.trialDaysLeft <= 0;
@@ -4601,6 +4631,6 @@ export default function App() {
     case 'playlists':
       return <PlaylistsScreen onBack={() => setScreen('home')} onSwitch={handleSwitchPlaylist} activePlaylist={credentials} />;
     default:
-      return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} contentStats={contentStats} />;
+      return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} contentStats={contentStats} loadingStats={loadingStats} statsError={statsError} />;
   }
 }
