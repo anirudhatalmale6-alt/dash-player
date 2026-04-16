@@ -503,16 +503,26 @@ async function fetchPlaylistsFromBackend() {
     const backendPlaylists = res.data?.playlists || [];
     // Backend is the ONLY source of truth - if backend returns empty, playlists are empty
     // This ensures hard reset and playlist deletion from admin/website work correctly
-    const merged = backendPlaylists.map(bp => ({
-      id: bp.id || Date.now() + Math.random(),
-      name: bp.name || 'My Playlist',
-      server_url: bp.server_url,
-      username: bp.username,
-      password: bp.password,
-      output_format: bp.output_format || 'm3u8',
-      is_default: bp.is_default === 1 || bp.is_default === true,
-      pin: bp.pin || '',
-    }));
+    const localPlaylists = getPlaylists();
+    const merged = backendPlaylists.map(bp => {
+      // Preserve local password if backend doesn't include it
+      let password = bp.password;
+      if (!password) {
+        const normUrl = (u) => (u || '').replace(/\/+$/, '').toLowerCase();
+        const localMatch = localPlaylists.find(lp => normUrl(lp.server_url) === normUrl(bp.server_url) && lp.username === bp.username);
+        if (localMatch) password = localMatch.password;
+      }
+      return {
+        id: bp.id || Date.now() + Math.random(),
+        name: bp.name || 'My Playlist',
+        server_url: bp.server_url,
+        username: bp.username,
+        password: password,
+        output_format: bp.output_format || 'm3u8',
+        is_default: bp.is_default === 1 || bp.is_default === true,
+        pin: bp.pin || '',
+      };
+    });
     // Ensure one default
     if (merged.length > 0 && !merged.find(p => p.is_default)) {
       merged[0].is_default = true;
@@ -563,7 +573,7 @@ function createXtreamApi(url, username, password, outputFormat = 'm3u8') {
       }
       return res.data;
     } catch (e) {
-      console.warn('Xtream API error:', action, e.message);
+      console.warn('Xtream API error:', action, e.message, e.code || '', e.response?.status || '');
       return null;
     }
   };
@@ -863,8 +873,43 @@ function VideoPlayer({ url, onClose, title, inline }) {
     // Don't auto-probe on mount - probe on demand when user opens track menu
     probedRef.current = false;
 
-    // FFmpeg-only player: single connection, all codecs, all formats
-    const streamUrl = isLive ? baseUrl + '.ts' : url;
+    // Detect platform: Electron (desktop) uses FFmpeg, mobile uses direct playback
+    const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
+    const streamUrl = isLive
+      ? (isElectron ? baseUrl + '.ts' : baseUrl + '.m3u8')
+      : url;
+
+    // Mobile/web fallback: play directly (Android WebView supports HLS natively)
+    if (!isElectron) {
+      console.log('[DashPlayer] Direct playback (no FFmpeg):', streamUrl);
+      setCurrentFormat('Direct');
+      video.src = streamUrl;
+      video.load();
+      video.addEventListener('loadeddata', () => { playbackStarted = true; onPlaying(); }, { once: true });
+      video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
+      video.addEventListener('error', () => {
+        if (!playbackStarted) {
+          // Try .ts extension as fallback
+          const altUrl = isLive ? baseUrl + '.ts' : url;
+          if (altUrl !== streamUrl) {
+            console.log('[DashPlayer] Trying fallback URL:', altUrl);
+            video.src = altUrl;
+            video.load();
+            video.play().catch(() => {});
+          } else {
+            setError('Stream unavailable');
+            setLoading(false);
+          }
+        }
+      }, { once: true });
+      setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
+      retryTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current || playbackStarted) return;
+        setError('Stream timeout - try another channel');
+        setLoading(false);
+      }, 15000);
+      return;
+    }
 
     const startFfmpeg = async (audioTrack = 0) => {
       if (!window.dashPlayer?.ffmpegTranscodeUrl) {
@@ -4377,8 +4422,11 @@ export default function App() {
 
   useEffect(() => {
     if (credentials && credentials.url && credentials.username && credentials.password) {
+      console.log('[DashPlayer] Creating API for:', credentials.url, 'user:', credentials.username);
       const format = credentials.output_format || 'm3u8';
       setApi(createXtreamApi(credentials.url, credentials.username, credentials.password, format));
+    } else if (credentials) {
+      console.warn('[DashPlayer] Credentials incomplete:', { url: !!credentials.url, username: !!credentials.username, password: !!credentials.password });
     }
   }, [credentials]);
 
@@ -4422,8 +4470,9 @@ export default function App() {
 
   // Fetch content stats for home screen
   useEffect(() => {
-    if (!api) return;
+    if (!api) { console.log('[DashPlayer] No API available, skipping stats fetch'); return; }
     const fetchStats = async () => {
+      console.log('[DashPlayer] Fetching content stats...');
       const [live, vod, series, liveCats, radioCatsApi] = await Promise.all([
         api.getLiveStreams(),
         api.getVodStreams(),
@@ -4431,6 +4480,7 @@ export default function App() {
         api.getLiveCategories(),
         api.getRadioCategories(),
       ]);
+      console.log('[DashPlayer] Stats results:', { live: live?.length || 0, vod: vod?.length || 0, series: series?.length || 0, liveCats: liveCats?.length || 0 });
       // Count radio streams - try dedicated radio API first, then fallback to live category names
       let radioCount = 0;
       if (radioCatsApi && Array.isArray(radioCatsApi) && radioCatsApi.length > 0) {

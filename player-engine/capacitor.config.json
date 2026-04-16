@@ -1,0 +1,8 @@
+{
+  "appId": "tv.dashplayer.app",
+  "appName": "Dash Player",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
