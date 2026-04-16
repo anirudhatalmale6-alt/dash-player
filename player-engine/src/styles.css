@@ -1366,10 +1366,12 @@ video::-webkit-media-controls-panel { overflow: hidden !important; }
   .back-btn { padding: 6px 12px; font-size: 12px; }
   .channel-count { font-size: 11px; }
   /* Sidebar categories */
-  .section-sidebar { width: 180px; }
+  .section-sidebar { width: 180px; min-width: 180px; }
   .sidebar-cat-item { padding: 8px 10px; font-size: 12px; }
-  /* Section body stacking */
-  .section-body { flex-direction: column; }
+  /* Section body - keep row layout on landscape, hide EPG panel */
+  .section-body { flex-direction: row; overflow: auto; }
+  .section-epg { display: none; }
+  .section-channel-list { flex: 1; min-width: 0; overflow-y: auto; }
   /* Live TV player area */
   .live-player-area { flex-direction: column; }
   .live-player-channels { width: 100%; max-height: 200px; border-left: none; border-top: 1px solid rgba(200,180,220,0.2); }
@@ -1391,7 +1393,15 @@ video::-webkit-media-controls-panel { overflow: hidden !important; }
   .home-cards-main { grid-template-columns: repeat(2, 1fr); }
   .home-cards-secondary { grid-template-columns: repeat(2, 1fr); }
   .home-topbar-actions { gap: 6px; }
-  .section-sidebar { width: 140px; }
+  /* Portrait: sidebar on top, channel list below */
+  .section-body { flex-direction: column; overflow: auto; }
+  .section-sidebar { width: 100%; max-height: 120px; overflow-y: auto; border-right: none; border-bottom: 1px solid rgba(200,180,220,0.2); }
+  .sidebar-categories { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 4px 8px; overflow-x: auto; }
+  .sidebar-cat-item { white-space: nowrap; padding: 6px 10px; font-size: 11px; }
+  .sidebar-search { padding: 6px 8px; }
+  .sidebar-search input { padding: 6px 10px; font-size: 11px; }
+  .section-channel-list { flex: 1; min-height: 0; overflow-y: auto; }
+  .section-epg { display: none; }
   .live-player-channels { max-height: 180px; }
   .live-player-video { min-height: 180px; }
 }
