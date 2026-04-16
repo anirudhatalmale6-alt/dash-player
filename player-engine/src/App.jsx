@@ -812,20 +812,22 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const probedRef = useRef(false); // track if we already probed this URL
   const subTimerRef = useRef(null); // subtitle sync timer
   const mountedRef = useRef(true);
+  const generationRef = useRef(0); // increments on each channel change to prevent stale handlers
 
   const cleanup = useCallback(() => {
+    // Increment generation to invalidate any pending error handlers from previous playback
+    generationRef.current++;
     if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
-    // CRITICAL: Clear video source FIRST to close the HTTP connection to local server
-    // This triggers req.on('close') in main.js which stops FFmpeg
-    if (videoRef.current) {
-      try { videoRef.current.pause(); } catch(e) {}
-      videoRef.current.src = '';
-      videoRef.current.load();
-    }
-    // Stop FFmpeg transcode if running (backup - req.on('close') should handle it)
+    // Stop FFmpeg first (before clearing src to avoid error handler race)
     if (window.dashPlayer?.ffmpegStop) {
       window.dashPlayer.ffmpegStop().catch(() => {});
+    }
+    // Clear video source to close HTTP connection
+    if (videoRef.current) {
+      try { videoRef.current.pause(); } catch(e) {}
+      videoRef.current.removeAttribute('src');
+      videoRef.current.load();
     }
     // Stop subtitle overlay sync
     if (subTimerRef.current) { clearInterval(subTimerRef.current); subTimerRef.current = null; }
@@ -924,10 +926,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
         setLoading(false);
         return;
       }
-      console.log('[DashPlayer] FFmpeg playing:', streamUrl);
+      // Capture current generation - if it changes, this playback session is stale
+      const myGen = generationRef.current;
+      console.log('[DashPlayer] FFmpeg playing:', streamUrl, 'gen:', myGen);
       setCurrentFormat('FFmpeg');
       try {
         const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack });
+        if (myGen !== generationRef.current) return; // stale - channel changed
         if (!result.success || !result.url) {
           console.log('[DashPlayer] FFmpeg URL failed');
           setError('Failed to start playback');
@@ -940,11 +945,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
         video.load();
 
         video.addEventListener('loadeddata', () => {
+          if (myGen !== generationRef.current) return;
           console.log('[DashPlayer] FFmpeg loadeddata, readyState:', video.readyState);
           playbackStarted = true;
           onPlaying();
         }, { once: true });
         video.addEventListener('canplay', () => {
+          if (myGen !== generationRef.current) return;
           playbackStarted = true;
           onPlaying();
         }, { once: true });
@@ -952,9 +959,10 @@ function VideoPlayer({ url, onClose, title, inline }) {
         // Error handling with auto-reconnect for live
         let reconnecting = false;
         const handleError = async () => {
-          if (!mountedRef.current) return;
+          // CRITICAL: ignore errors from stale playback sessions (e.g. cleanup cleared src)
+          if (!mountedRef.current || myGen !== generationRef.current) return;
           const errMsg = video.error?.message || '';
-          console.log('[DashPlayer] FFmpeg playback error:', errMsg);
+          console.log('[DashPlayer] FFmpeg playback error:', errMsg, 'gen:', myGen);
 
           // Auto-reconnect for live decode errors (max 1 reconnect)
           if (playbackStarted && isLive && !reconnecting) {
@@ -962,12 +970,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
             console.log('[DashPlayer] Reconnecting FFmpeg...');
             // Stop current first
             if (window.dashPlayer?.ffmpegStop) await window.dashPlayer.ffmpegStop().catch(() => {});
+            if (myGen !== generationRef.current) return; // channel changed during stop
             const r2 = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack });
-            if (r2.success && r2.url && mountedRef.current) {
+            if (r2.success && r2.url && mountedRef.current && myGen === generationRef.current) {
               video.src = r2.url;
               video.load();
               video.play().catch(() => {});
-            } else {
+            } else if (myGen === generationRef.current) {
               setError('Stream connection lost');
             }
             return;
@@ -980,16 +989,17 @@ function VideoPlayer({ url, onClose, title, inline }) {
         };
         video.addEventListener('error', handleError, { once: true });
 
-        setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
+        setTimeout(() => { if (video && mountedRef.current && myGen === generationRef.current) video.play().catch(() => {}); }, 300);
 
         // Timeout
         retryTimerRef.current = setTimeout(() => {
-          if (!mountedRef.current || playbackStarted) return;
+          if (!mountedRef.current || playbackStarted || myGen !== generationRef.current) return;
           console.log('[DashPlayer] FFmpeg timeout, readyState:', video.readyState);
           setError('Stream timeout - try another channel');
           setLoading(false);
         }, 15000);
       } catch (e) {
+        if (myGen !== generationRef.current) return;
         console.log('[DashPlayer] FFmpeg error:', e);
         setError('Playback error: ' + e.message);
         setLoading(false);

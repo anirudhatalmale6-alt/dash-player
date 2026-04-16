@@ -81,7 +81,7 @@ function ensureLocalServer() {
   return new Promise((resolve) => {
     if (localServer && localServerPort) { resolve(localServerPort); return; }
 
-    localServer = http.createServer((req, res) => {
+    localServer = http.createServer(async (req, res) => {
       // The request URL contains the encoded source URL and options
       const url = new URL(req.url, `http://localhost`);
       const sourceUrl = url.searchParams.get('url');
@@ -196,6 +196,35 @@ function ensureLocalServer() {
       // Use browser-like User-Agent so IPTV server counts FFmpeg as same client
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
 
+      // Quick probe to detect video codec - if HEVC/H.265, we must transcode to H.264
+      // because Chrome/Electron can't decode HEVC (results in black screen with audio only)
+      let videoCodecArgs;
+      try {
+        const probeOutput = await new Promise((resolveProbe) => {
+          let stderr = '';
+          const probeProc = spawn(ffmpegPath, [
+            '-hide_banner', '-user_agent', userAgent,
+            '-probesize', '2000000', '-analyzeduration', '2000000',
+            '-i', sourceUrl,
+          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+          probeProc.stderr.on('data', (d) => { stderr += d.toString(); });
+          const probeTimeout = setTimeout(() => { try { probeProc.kill(); } catch(e) {} }, 5000);
+          probeProc.on('exit', () => { clearTimeout(probeTimeout); resolveProbe(stderr); });
+          probeProc.on('error', () => { clearTimeout(probeTimeout); resolveProbe(stderr); });
+        });
+        const isHevc = /Video:.*?(hevc|h265|h\.265)/i.test(probeOutput);
+        if (isHevc) {
+          console.log('[FFmpeg] HEVC detected - transcoding video to H.264');
+          videoCodecArgs = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23'];
+        } else {
+          console.log('[FFmpeg] Non-HEVC video - copying video stream');
+          videoCodecArgs = ['-c:v', 'copy'];
+        }
+      } catch(e) {
+        console.log('[FFmpeg] Probe failed, defaulting to copy:', e.message);
+        videoCodecArgs = ['-c:v', 'copy'];
+      }
+
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
@@ -205,7 +234,7 @@ function ensureLocalServer() {
         '-i', sourceUrl,
         '-map', '0:v:0?',             // ? = optional, won't fail if missing
         '-map', `0:a:${audioTrack}?`,
-        '-c:v', 'copy',               // copy video (no re-encode)
+        ...videoCodecArgs,             // copy or transcode video based on codec
         '-c:a', 'aac',                // transcode audio to AAC
         '-b:a', '192k',
         '-ac', '2',
