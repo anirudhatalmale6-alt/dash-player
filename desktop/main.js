@@ -45,10 +45,26 @@ function findBinary(name) {
   return null;
 }
 
+let currentTranscodeResponse = null; // track active HTTP response to end it on stop
+
 function stopFfmpeg() {
   if (ffmpegProcess) {
-    try { ffmpegProcess.kill('SIGKILL'); } catch(e) {}
+    const pid = ffmpegProcess.pid;
+    console.log('[FFmpeg] Stopping process PID:', pid);
+    try {
+      // On Windows, SIGKILL doesn't kill child processes. Use taskkill /T to kill process tree.
+      if (process.platform === 'win32' && pid) {
+        require('child_process').exec(`taskkill /PID ${pid} /T /F`, () => {});
+      } else {
+        ffmpegProcess.kill('SIGKILL');
+      }
+    } catch(e) { console.log('[FFmpeg] Kill error:', e.message); }
     ffmpegProcess = null;
+  }
+  // End the current HTTP response so browser stops waiting
+  if (currentTranscodeResponse) {
+    try { currentTranscodeResponse.end(); } catch(e) {}
+    currentTranscodeResponse = null;
   }
 }
 
@@ -163,7 +179,8 @@ function ensureLocalServer() {
 
       // Transcode mode: remux stream with audio transcoded to AAC
       console.log(`[FFmpeg] Transcoding (audio track ${audioTrack}):`, sourceUrl);
-      stopFfmpeg();
+      stopFfmpeg(); // Kill previous FFmpeg + end previous response
+      currentTranscodeResponse = res; // Track this response
 
       const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
       const subCount = parseInt(url.searchParams.get('subs') || '0');
@@ -232,13 +249,14 @@ function ensureLocalServer() {
 
       ffmpegProcess.on('exit', (code) => {
         console.log('[FFmpeg] Process exited with code', code);
+        if (currentTranscodeResponse === res) currentTranscodeResponse = null;
         if (!headersSent) {
           const errDetail = stderrBuf.slice(-800).trim();
           console.log('[FFmpeg] No output produced! stderr:', errDetail);
-          res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-          res.end('FFmpeg error: ' + errDetail);
+          try { res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }); } catch(e) {}
+          try { res.end('FFmpeg error: ' + errDetail); } catch(e) {}
         } else {
-          res.end();
+          try { res.end(); } catch(e) {}
         }
         // Cache any extracted subtitle files
         for (let i = 0; i < subTmpFiles.length; i++) {

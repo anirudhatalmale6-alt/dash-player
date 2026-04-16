@@ -816,7 +816,14 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const cleanup = useCallback(() => {
     if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
-    // Stop FFmpeg transcode if running
+    // CRITICAL: Clear video source FIRST to close the HTTP connection to local server
+    // This triggers req.on('close') in main.js which stops FFmpeg
+    if (videoRef.current) {
+      try { videoRef.current.pause(); } catch(e) {}
+      videoRef.current.src = '';
+      videoRef.current.load();
+    }
+    // Stop FFmpeg transcode if running (backup - req.on('close') should handle it)
     if (window.dashPlayer?.ffmpegStop) {
       window.dashPlayer.ffmpegStop().catch(() => {});
     }
@@ -995,8 +1002,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
       }
     };
 
-    // Start FFmpeg player
-    startFfmpeg(0);
+    // Start FFmpeg player (small delay to ensure previous connection is fully closed)
+    setTimeout(() => { if (mountedRef.current) startFfmpeg(0); }, 200);
 
     return () => {
       mountedRef.current = false; // mark as unmounted BEFORE cleanup to prevent error handlers from firing
