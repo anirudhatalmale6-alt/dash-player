@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { mockData } from './services/xtreamApi';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
+import Hls from 'hls.js';
 import './styles.css';
 
 /* ── Translations ── */
@@ -811,6 +812,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const [currentSubText, setCurrentSubText] = useState(''); // current subtitle text to display
   const probedRef = useRef(false); // track if we already probed this URL
   const subTimerRef = useRef(null); // subtitle sync timer
+  const hlsRef = useRef(null); // HLS.js instance for mobile playback
   const mountedRef = useRef(true);
   const generationRef = useRef(0); // increments on each channel change to prevent stale handlers
 
@@ -819,6 +821,11 @@ function VideoPlayer({ url, onClose, title, inline }) {
     generationRef.current++;
     if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
+    // Destroy HLS.js instance if active (mobile playback)
+    if (hlsRef.current) {
+      try { hlsRef.current.destroy(); } catch(e) {}
+      hlsRef.current = null;
+    }
     // Stop FFmpeg first (before clearing src to avoid error handler race)
     if (window.dashPlayer?.ffmpegStop) {
       window.dashPlayer.ffmpegStop().catch(() => {});
@@ -888,30 +895,64 @@ function VideoPlayer({ url, onClose, title, inline }) {
       ? (isElectron ? baseUrl + '.ts' : baseUrl + '.m3u8')
       : url;
 
-    // Mobile/web fallback: play directly (Android WebView supports HLS natively)
+    // Mobile/web: use HLS.js for .m3u8 streams (Android WebView doesn't support HLS natively)
     if (!isElectron) {
-      console.log('[DashPlayer] Direct playback (no FFmpeg):', streamUrl);
-      setCurrentFormat('Direct');
-      video.src = streamUrl;
-      video.load();
-      video.addEventListener('loadeddata', () => { playbackStarted = true; onPlaying(); }, { once: true });
-      video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
-      video.addEventListener('error', () => {
-        if (!playbackStarted) {
-          // Try .ts extension as fallback
-          const altUrl = isLive ? baseUrl + '.ts' : url;
-          if (altUrl !== streamUrl) {
-            console.log('[DashPlayer] Trying fallback URL:', altUrl);
-            video.src = altUrl;
-            video.load();
-            video.play().catch(() => {});
-          } else {
-            setError('Stream unavailable');
-            setLoading(false);
+      const mobileUrl = isLive ? baseUrl + '.m3u8' : url;
+      console.log('[DashPlayer] Mobile playback:', mobileUrl);
+      setCurrentFormat('HLS');
+
+      // Try HLS.js first (works on Android WebView with MSE support)
+      if (isLive && Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          maxBufferLength: 10,
+          maxMaxBufferLength: 30,
+          startFragPrefetch: true,
+        });
+        hlsRef.current = hls;
+        hls.loadSource(mobileUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          playbackStarted = true;
+          video.play().catch(() => {});
+          onPlaying();
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          console.log('[DashPlayer] HLS error:', data.type, data.details);
+          if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              // Try .ts direct fallback
+              console.log('[DashPlayer] HLS fatal network error, trying .ts fallback');
+              hls.destroy();
+              hlsRef.current = null;
+              video.src = baseUrl + '.ts';
+              video.load();
+              video.play().catch(() => {});
+              video.addEventListener('loadeddata', () => { playbackStarted = true; onPlaying(); }, { once: true });
+            } else {
+              hls.destroy();
+              hlsRef.current = null;
+              setError('Stream unavailable');
+              setLoading(false);
+            }
           }
-        }
-      }, { once: true });
-      setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari/native HLS support
+        video.src = mobileUrl;
+        video.load();
+        video.addEventListener('loadeddata', () => { playbackStarted = true; onPlaying(); }, { once: true });
+        video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
+        setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
+      } else {
+        // Fallback: try .ts direct
+        console.log('[DashPlayer] No HLS support, trying .ts direct');
+        video.src = isLive ? baseUrl + '.ts' : url;
+        video.load();
+        video.addEventListener('loadeddata', () => { playbackStarted = true; onPlaying(); }, { once: true });
+        setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
+      }
       retryTimerRef.current = setTimeout(() => {
         if (!mountedRef.current || playbackStarted) return;
         setError('Stream timeout - try another channel');
