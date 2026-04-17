@@ -1,0 +1,14 @@
+{
+  "id": "tv.dashplayer.app",
+  "version": "3.2.0",
+  "vendor": "Dash Player",
+  "type": "web",
+  "main": "index.html",
+  "title": "Dash Player",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "appDescription": "Multi-Platform IPTV Player",
+  "resolution": "1920x1080",
+  "transparent": false,
+  "requiredMemory": 200
+}
