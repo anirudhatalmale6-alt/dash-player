@@ -192,43 +192,55 @@ function ensureLocalServer() {
 
       const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
       const subCount = parseInt(url.searchParams.get('subs') || '0');
+      const seekTime = url.searchParams.get('seek') || '0'; // seek position in seconds for VOD
+      const forceTranscode = url.searchParams.get('forceTranscode') === '1'; // force video transcoding
 
       // Use browser-like User-Agent so IPTV server counts FFmpeg as same client
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
 
-      // Quick probe to detect video codec - if HEVC/H.265, we must transcode to H.264
-      // because Chrome/Electron can't decode HEVC (results in black screen with audio only)
+      // Determine video codec: force transcode, or probe to detect HEVC
       let videoCodecArgs;
-      try {
-        const probeOutput = await new Promise((resolveProbe) => {
-          let stderr = '';
-          const probeProc = spawn(ffmpegPath, [
-            '-hide_banner', '-user_agent', userAgent,
-            '-probesize', '2000000', '-analyzeduration', '2000000',
-            '-i', sourceUrl,
-          ], { stdio: ['pipe', 'pipe', 'pipe'] });
-          probeProc.stderr.on('data', (d) => { stderr += d.toString(); });
-          const probeTimeout = setTimeout(() => { try { probeProc.kill(); } catch(e) {} }, 5000);
-          probeProc.on('exit', () => { clearTimeout(probeTimeout); resolveProbe(stderr); });
-          probeProc.on('error', () => { clearTimeout(probeTimeout); resolveProbe(stderr); });
-        });
-        const isHevc = /Video:.*?(hevc|h265|h\.265)/i.test(probeOutput);
-        if (isHevc) {
-          console.log('[FFmpeg] HEVC detected - transcoding video to H.264');
-          videoCodecArgs = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23'];
-        } else {
-          console.log('[FFmpeg] Non-HEVC video - copying video stream');
+      if (forceTranscode) {
+        console.log('[FFmpeg] Forced video transcoding to H.264');
+        videoCodecArgs = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23'];
+      } else {
+        try {
+          const probeOutput = await new Promise((resolveProbe) => {
+            let stderr = '';
+            const probeProc = spawn(ffmpegPath, [
+              '-hide_banner', '-user_agent', userAgent,
+              '-probesize', '2000000', '-analyzeduration', '2000000',
+              '-i', sourceUrl,
+            ], { stdio: ['pipe', 'pipe', 'pipe'] });
+            probeProc.stderr.on('data', (d) => { stderr += d.toString(); });
+            const probeTimeout = setTimeout(() => { try { probeProc.kill(); } catch(e) {} }, 8000);
+            probeProc.on('exit', () => { clearTimeout(probeTimeout); resolveProbe(stderr); });
+            probeProc.on('error', () => { clearTimeout(probeTimeout); resolveProbe(stderr); });
+          });
+          const isHevc = /Video:.*?(hevc|h265|h\.265)/i.test(probeOutput);
+          if (isHevc) {
+            console.log('[FFmpeg] HEVC detected - transcoding video to H.264');
+            videoCodecArgs = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23'];
+          } else {
+            console.log('[FFmpeg] Non-HEVC video - copying video stream');
+            videoCodecArgs = ['-c:v', 'copy'];
+          }
+        } catch(e) {
+          console.log('[FFmpeg] Probe failed, defaulting to copy:', e.message);
           videoCodecArgs = ['-c:v', 'copy'];
         }
-      } catch(e) {
-        console.log('[FFmpeg] Probe failed, defaulting to copy:', e.message);
-        videoCodecArgs = ['-c:v', 'copy'];
       }
+
+      // Build seek args for VOD (seek before input for fast seeking)
+      const seekArgs = (!isLive && parseFloat(seekTime) > 0)
+        ? ['-ss', seekTime]
+        : [];
 
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
         '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+        ...seekArgs,
         '-probesize', isLive ? '10000000' : '50000000',
         '-analyzeduration', isLive ? '5000000' : '15000000',
         '-i', sourceUrl,
@@ -479,12 +491,14 @@ ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
 });
 
 // Get local transcode URL (browser will connect to our local server)
-ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack, subtitleCount }) => {
+ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack, subtitleCount, seek, forceTranscode }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
   const port = await ensureLocalServer();
   const subs = subtitleCount || 0;
-  const transUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&audio=${audioTrack || 0}&mode=transcode&subs=${subs}`;
-  console.log('[FFmpeg] Transcode URL:', transUrl, `(subs: ${subs})`);
+  const seekParam = seek ? `&seek=${seek}` : '';
+  const forceParam = forceTranscode ? '&forceTranscode=1' : '';
+  const transUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&audio=${audioTrack || 0}&mode=transcode&subs=${subs}${seekParam}${forceParam}`;
+  console.log('[FFmpeg] Transcode URL:', transUrl, `(subs: ${subs}, seek: ${seek || 0}, force: ${!!forceTranscode})`);
   return { success: true, url: transUrl };
 });
 
