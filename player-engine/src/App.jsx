@@ -1060,13 +1060,21 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
-    // Use browser's native audioTracks API - no FFmpeg restart needed!
-    // All audio tracks are mapped at start, browser switches instantly
-    if (videoRef.current && videoRef.current.audioTracks) {
-      const tracks = videoRef.current.audioTracks;
-      console.log('[DashPlayer] Switching audio track to', trackId, '(total:', tracks.length, ')');
-      for (let i = 0; i < tracks.length; i++) {
-        tracks[i].enabled = (i === trackId);
+    if (usingFfmpeg && window.dashPlayer?.ffmpegTranscodeUrl && url) {
+      const currentTime = videoRef.current?.currentTime || 0;
+      const isLive = url.includes('/live/') || url.includes('/timeshift/');
+      const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
+      console.log('[DashPlayer] Switching audio track', trackId, 'at position', currentTime);
+      // Restart FFmpeg with different audio track + seek to current position
+      if (window.dashPlayer?.ffmpegStop) await window.dashPlayer.ffmpegStop().catch(() => {});
+      const result = await window.dashPlayer.ffmpegTranscodeUrl({
+        url: streamUrl, audioTrack: trackId,
+        seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
+      });
+      if (result.success && result.url && videoRef.current) {
+        videoRef.current.src = result.url;
+        videoRef.current.load();
+        videoRef.current.play().catch(() => {});
       }
     }
   };

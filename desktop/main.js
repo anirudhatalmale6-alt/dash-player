@@ -186,25 +186,28 @@ function ensureLocalServer() {
       }
 
       // Remux mode: copy video + transcode audio to AAC (no video re-encoding!)
-      // Maps ALL audio tracks so browser can switch without restarting FFmpeg
       console.log(`[FFmpeg] Remuxing:`, sourceUrl);
       stopFfmpeg(); // Kill previous FFmpeg + end previous response
       currentTranscodeResponse = res; // Track this response
 
       const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
+      const seekTime = url.searchParams.get('seek') || '0';
 
       // Use browser-like User-Agent so IPTV server counts FFmpeg as same client
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
 
+      // Seek args for VOD (before input for fast seek)
+      const seekArgs = (!isLive && parseFloat(seekTime) > 0) ? ['-ss', seekTime] : [];
+
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
-        '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-        '-probesize', isLive ? '10000000' : '50000000',
-        '-analyzeduration', isLive ? '5000000' : '15000000',
+        ...seekArgs,
+        '-probesize', isLive ? '1000000' : '5000000',       // 1MB live, 5MB VOD (fast startup)
+        '-analyzeduration', isLive ? '1000000' : '5000000', // 1s live, 5s VOD
         '-i', sourceUrl,
         '-map', '0:v:0?',             // first video stream (optional)
-        '-map', '0:a?',               // ALL audio tracks - browser switches via audioTracks API
+        '-map', `0:a:${audioTrack}?`, // selected audio track
         '-c:v', 'copy',               // NEVER transcode video - let hardware decoder handle it
         '-c:a', 'aac',                // transcode audio to AAC (browser can't play MP2/MP3 in fMP4)
         '-b:a', '192k',
@@ -428,10 +431,12 @@ ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
 });
 
 // Get local remux URL (browser will connect to our local server)
-ipcMain.handle('ffmpeg-transcode-url', async (event, { url }) => {
+ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack, seek }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
   const port = await ensureLocalServer();
-  const transUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&mode=transcode`;
+  const audioParam = audioTrack ? `&audio=${audioTrack}` : '';
+  const seekParam = seek ? `&seek=${seek}` : '';
+  const transUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&mode=transcode${audioParam}${seekParam}`;
   console.log('[FFmpeg] Remux URL:', transUrl);
   return { success: true, url: transUrl };
 });
