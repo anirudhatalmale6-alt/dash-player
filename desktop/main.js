@@ -4,6 +4,7 @@ const { spawn, execFile } = require('child_process');
 const http = require('http');
 const net = require('net');
 const fs = require('fs');
+const os = require('os');
 
 // Enable proprietary codecs (H.265/HEVC), audio track selection, and hardware acceleration
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport,MediaFoundationH265Decoding,AudioTrackSelection');
@@ -17,19 +18,19 @@ let ffmpegProcess = null;
 let localServer = null;
 let localServerPort = 0;
 let mainWindow = null;
-const os = require('os');
-const subtitleCache = new Map(); // url+index -> { path, ready, error }
-let subtitleExtractProcs = []; // track running extraction processes
+const subtitleCache = new Map(); // url+index -> { path, ready }
+
+// Pending subtitle tracks to embed in next transcode (set by IPC, consumed by server)
+let pendingSubtitleTracks = null;
+let activeSubtitleFiles = {}; // track index -> temp file path
 
 function findBinary(name) {
   const ext = process.platform === 'win32' ? '.exe' : '';
-  // Check bundled (extraResources)
   const bundled = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'ffmpeg', name + ext);
   if (fs.existsSync(bundled)) {
     console.log(`[FFmpeg] Found bundled ${name}:`, bundled);
     return bundled;
   }
-  // Check system PATH
   const candidates = process.platform === 'win32'
     ? [`${name}.exe`, `C:\\ffmpeg\\bin\\${name}.exe`, `C:\\ffmpeg\\${name}.exe`,
        `C:\\Program Files\\ffmpeg\\bin\\${name}.exe`, `C:\\Program Files (x86)\\ffmpeg\\bin\\${name}.exe`]
@@ -45,20 +46,31 @@ function findBinary(name) {
   return null;
 }
 
-let currentTranscodeResponse = null; // track active HTTP response to end it on stop
+// Safe write to HTTP response - prevents ERR_STREAM_WRITE_AFTER_END crashes
+function safeWrite(res, chunk) {
+  if (!res || res.writableEnded || res.destroyed) return false;
+  try { res.write(chunk); return true; } catch(e) { return false; }
+}
+function safeEnd(res, data) {
+  if (!res || res.writableEnded || res.destroyed) return;
+  try { if (data) res.end(data); else res.end(); } catch(e) {}
+}
+function safeWriteHead(res, code, headers) {
+  if (!res || res.headersSent || res.writableEnded || res.destroyed) return;
+  try { res.writeHead(code, headers); } catch(e) {}
+}
+
+let currentTranscodeResponse = null;
 
 function stopFfmpeg() {
   if (ffmpegProcess) {
     const proc = ffmpegProcess;
     const pid = proc.pid;
     console.log('[FFmpeg] Stopping process PID:', pid);
-    ffmpegProcess = null; // clear reference immediately to prevent double-stop
-    try {
-      // Send 'q' to FFmpeg stdin for graceful shutdown (closes network connections properly)
-      proc.stdin.write('q\n');
-      proc.stdin.end();
-    } catch(e) {}
-    // Force kill after 300ms if it hasn't exited
+    ffmpegProcess = null;
+    try { proc.stdin.write('q\n'); proc.stdin.end(); } catch(e) {}
+    // Remove all stdout/stderr listeners to prevent writes after response ends
+    try { proc.stdout.removeAllListeners('data'); } catch(e) {}
     setTimeout(() => {
       try {
         if (process.platform === 'win32' && pid) {
@@ -69,111 +81,97 @@ function stopFfmpeg() {
       } catch(e) {}
     }, 300);
   }
-  // End the current HTTP response so browser stops waiting
   if (currentTranscodeResponse) {
-    try { currentTranscodeResponse.end(); } catch(e) {}
+    safeEnd(currentTranscodeResponse);
     currentTranscodeResponse = null;
   }
 }
 
-// Start a local HTTP server that pipes FFmpeg output to the browser
 function ensureLocalServer() {
   return new Promise((resolve) => {
     if (localServer && localServerPort) { resolve(localServerPort); return; }
 
     localServer = http.createServer(async (req, res) => {
-      // The request URL contains the encoded source URL and options
       const url = new URL(req.url, `http://localhost`);
       const sourceUrl = url.searchParams.get('url');
       const audioTrack = url.searchParams.get('audio') || '0';
-      const mode = url.searchParams.get('mode') || 'transcode'; // transcode | subtitle
+      const mode = url.searchParams.get('mode') || 'transcode';
 
+      /* ── Radio: audio-only AAC output ── */
       if (mode === 'radio') {
-        // Audio-only remux for radio streams - output as MP3 for HTML5 Audio compatibility
         console.log(`[FFmpeg] Radio remux:`, sourceUrl);
-        stopFfmpeg(); // Kill previous FFmpeg + end previous response
+        stopFfmpeg();
         currentTranscodeResponse = res;
 
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
-        const args = [
+        ffmpegProcess = spawn(ffmpegPath, [
           '-hide_banner', '-loglevel', 'info',
           '-user_agent', userAgent,
-          '-probesize', '500000',       // 500KB - radio streams are small
-          '-analyzeduration', '1000000', // 1s
+          '-probesize', '500000',
+          '-analyzeduration', '1000000',
+          '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
           '-i', sourceUrl,
-          '-vn',                         // no video
-          '-c:a', 'aac',
-          '-b:a', '128k',
-          '-ac', '2',                    // stereo
-          '-f', 'adts',                  // raw AAC frames - works in Audio element
+          '-vn',
+          '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+          '-f', 'adts',
           'pipe:1',
-        ];
-
-        ffmpegProcess = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+        ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
         let headersSent = false;
-        ffmpegProcess.stdout.on('data', (chunk) => {
+        const proc = ffmpegProcess;
+        proc.stdout.on('data', (chunk) => {
+          if (res.writableEnded || res.destroyed) return;
           if (!headersSent) {
             headersSent = true;
             console.log('[FFmpeg] Radio: first data received');
-            res.writeHead(200, {
-              'Content-Type': 'audio/aac',
-              'Access-Control-Allow-Origin': '*',
-              'Cache-Control': 'no-cache',
-              'Connection': 'keep-alive',
-            });
+            safeWriteHead(res, 200, { 'Content-Type': 'audio/aac', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' });
           }
-          try { res.write(chunk); } catch(e) {}
+          safeWrite(res, chunk);
         });
-        ffmpegProcess.stderr.on('data', (d) => {
-          const msg = d.toString();
-          const lines = msg.split('\n').filter(l => l.trim() && !l.includes('frame=') && !l.includes('size='));
+        proc.stderr.on('data', (d) => {
+          const lines = d.toString().split('\n').filter(l => l.trim() && !l.includes('frame=') && !l.includes('size='));
           lines.forEach(l => { if (l.trim()) console.log('[FFmpeg radio]', l.trim()); });
         });
-        ffmpegProcess.on('exit', (code) => {
-          console.log('[FFmpeg] Radio process exited with code', code);
+        proc.on('exit', (code) => {
+          console.log('[FFmpeg] Radio exited code', code);
           if (currentTranscodeResponse === res) currentTranscodeResponse = null;
           if (!headersSent) {
-            try { res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }); } catch(e) {}
-            try { res.end('Radio stream error'); } catch(e) {}
+            safeWriteHead(res, 500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+            safeEnd(res, 'Radio stream error');
           } else {
-            try { res.end(); } catch(e) {}
+            safeEnd(res);
           }
-          ffmpegProcess = null;
+          if (ffmpegProcess === proc) ffmpegProcess = null;
         });
-        ffmpegProcess.on('error', (err) => {
-          console.log('[FFmpeg] Radio process error:', err.message);
-          if (!headersSent) { res.writeHead(500); res.end(err.message); } else { res.end(); }
-          ffmpegProcess = null;
+        proc.on('error', (err) => {
+          console.log('[FFmpeg] Radio error:', err.message);
+          if (!headersSent) safeWriteHead(res, 500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+          safeEnd(res, err.message);
+          if (ffmpegProcess === proc) ffmpegProcess = null;
         });
         req.on('close', () => { console.log('[FFmpeg] Radio client disconnected'); stopFfmpeg(); });
         return;
       }
 
+      /* ── Serve cached subtitle file ── */
       if (mode === 'subtitle-file') {
-        // Serve a pre-extracted subtitle temp file
         const filePath = url.searchParams.get('path');
         if (!filePath || !fs.existsSync(filePath)) {
-          res.writeHead(404, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-          res.end('Subtitle file not found');
+          safeWriteHead(res, 404, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+          safeEnd(res, 'Subtitle file not found');
           return;
         }
-        console.log('[FFmpeg sub] Serving cached subtitle file:', filePath);
+        console.log('[FFmpeg sub] Serving subtitle file:', filePath);
         const data = fs.readFileSync(filePath);
-        res.writeHead(200, {
-          'Content-Type': 'text/vtt; charset=utf-8',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-cache',
-          'Content-Length': data.length,
-        });
-        res.end(data);
+        safeWriteHead(res, 200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Content-Length': data.length });
+        safeEnd(res, data);
         return;
       }
 
-      if (!sourceUrl) { res.writeHead(400); res.end('Missing url'); return; }
+      if (!sourceUrl) { safeWriteHead(res, 400); safeEnd(res, 'Missing url'); return; }
 
+      /* ── Subtitle extraction via pipe ── */
       if (mode === 'subtitle') {
-        // Extract subtitle track as WebVTT via pipe - streams data as it becomes available
         const subIndex = url.searchParams.get('subIndex') || '0';
         const cacheKey = `${sourceUrl}::${subIndex}`;
         console.log(`[FFmpeg] Extracting subtitle track ${subIndex} from:`, sourceUrl);
@@ -181,20 +179,19 @@ function ensureLocalServer() {
         const proc = spawn(ffmpegPath, [
           '-hide_banner', '-loglevel', 'info',
           '-user_agent', subUa,
-          '-probesize', '100000000',      // 100MB probe for large MKV
-          '-analyzeduration', '30000000', // 30 seconds analysis
+          '-probesize', '100000000',
+          '-analyzeduration', '30000000',
           '-i', sourceUrl,
           '-map', `0:s:${subIndex}`,
-          '-an', '-vn',                   // skip audio+video = faster extraction
+          '-an', '-vn',
           '-c:s', 'webvtt',
           '-f', 'webvtt',
           'pipe:1',
         ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
-        // Kill subtitle extraction after 120 seconds if no data
         const subTimeout = setTimeout(() => {
           if (!hasData) {
-            console.log('[FFmpeg sub] Timeout - no subtitle data after 120s');
+            console.log('[FFmpeg sub] Timeout - no data after 120s');
             try { proc.kill(); } catch(e) {}
           }
         }, 120000);
@@ -203,17 +200,14 @@ function ensureLocalServer() {
         let stderrLog = '';
         let allData = [];
         proc.stdout.on('data', (chunk) => {
+          if (res.writableEnded || res.destroyed) return;
           if (!hasData) {
             hasData = true;
             console.log('[FFmpeg sub] First subtitle data received');
-            res.writeHead(200, {
-              'Content-Type': 'text/vtt; charset=utf-8',
-              'Access-Control-Allow-Origin': '*',
-              'Cache-Control': 'no-cache',
-            });
+            safeWriteHead(res, 200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
           }
           allData.push(chunk);
-          res.write(chunk);
+          safeWrite(res, chunk);
         });
         proc.stderr.on('data', (d) => {
           const msg = d.toString();
@@ -224,112 +218,153 @@ function ensureLocalServer() {
         proc.on('exit', (code) => {
           clearTimeout(subTimeout);
           if (!hasData) {
-            console.log('[FFmpeg sub] No subtitle data produced. Code:', code, 'stderr:', stderrLog.slice(-500).trim());
-            res.writeHead(200, { 'Content-Type': 'text/vtt', 'Access-Control-Allow-Origin': '*' });
-            res.end('WEBVTT\n\n'); // empty valid WebVTT
+            console.log('[FFmpeg sub] No data produced. Code:', code, 'stderr:', stderrLog.slice(-500));
+            safeWriteHead(res, 200, { 'Content-Type': 'text/vtt', 'Access-Control-Allow-Origin': '*' });
+            safeEnd(res, 'WEBVTT\n\n');
           } else {
-            console.log('[FFmpeg sub] Subtitle extraction complete, caching result');
-            // Cache to temp file for future requests
             const tmpFile = path.join(os.tmpdir(), `dashplayer-sub-${Date.now()}-${subIndex}.vtt`);
             try {
               fs.writeFileSync(tmpFile, Buffer.concat(allData));
               subtitleCache.set(cacheKey, { ready: true, path: tmpFile });
-            } catch(e) { console.log('[FFmpeg sub] Cache write error:', e.message); }
-            res.end();
+              console.log('[FFmpeg sub] Cached to:', tmpFile, '(' + Buffer.concat(allData).length + ' bytes)');
+            } catch(e) { console.log('[FFmpeg sub] Cache error:', e.message); }
+            safeEnd(res);
           }
         });
         proc.on('error', (e) => {
-          console.log('[FFmpeg sub] Process error:', e.message);
-          if (!hasData) { res.writeHead(500); }
-          res.end();
+          console.log('[FFmpeg sub] Error:', e.message);
+          safeWriteHead(res, 500, { 'Access-Control-Allow-Origin': '*' });
+          safeEnd(res);
         });
         req.on('close', () => { try { proc.kill(); } catch(e) {} });
         return;
       }
 
-      // Remux mode: copy video + transcode audio to AAC (no video re-encoding!)
+      /* ── Main transcode/remux mode ── */
       console.log(`[FFmpeg] Remuxing:`, sourceUrl);
-      stopFfmpeg(); // Kill previous FFmpeg + end previous response
-      currentTranscodeResponse = res; // Track this response
+      stopFfmpeg();
+      currentTranscodeResponse = res;
 
       const isLive = sourceUrl.includes('/live/') || sourceUrl.includes('/timeshift/');
-      const seekTime = url.searchParams.get('seek') || '0';
+      const seekTime = parseFloat(url.searchParams.get('seek') || '0');
 
-      // Use browser-like User-Agent so IPTV server counts FFmpeg as same client
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
 
-      // Seek args for VOD (before input for fast seek)
-      const seekArgs = (!isLive && parseFloat(seekTime) > 0) ? ['-ss', seekTime] : [];
+      // Dual seek for VOD: input seek to (time-15s) for speed, output seek 15s for accuracy
+      // This prevents audio/video desync when switching audio tracks
+      let inputSeekArgs = [];
+      let outputSeekArgs = [];
+      if (!isLive && seekTime > 0) {
+        if (seekTime > 20) {
+          // Dual seek: fast input seek + precise output seek
+          const inputSeek = Math.max(0, seekTime - 15);
+          inputSeekArgs = ['-ss', String(inputSeek)];
+          outputSeekArgs = ['-ss', String(seekTime - inputSeek)];
+        } else {
+          // Short seek: just input seek is fine
+          inputSeekArgs = ['-ss', String(seekTime)];
+        }
+      }
 
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
-        ...seekArgs,
-        '-probesize', isLive ? '1000000' : '5000000',       // 1MB live, 5MB VOD (fast startup)
-        '-analyzeduration', isLive ? '1000000' : '5000000', // 1s live, 5s VOD
+        ...inputSeekArgs,
+        '-probesize', isLive ? '1000000' : '5000000',
+        '-analyzeduration', isLive ? '1000000' : '5000000',
         '-i', sourceUrl,
-        '-map', '0:v:0?',             // first video stream (optional)
-        '-map', `0:a:${audioTrack}?`, // selected audio track
-        '-c:v', 'copy',               // NEVER transcode video - let hardware decoder handle it
-        '-c:a', 'aac',                // transcode audio to AAC (browser can't play MP2/MP3 in fMP4)
+        ...outputSeekArgs,
+        '-map', '0:v:0?',
+        '-map', `0:a:${audioTrack}?`,
+        '-c:v', 'copy',
+        '-c:a', 'aac',
         '-b:a', '192k',
         '-f', 'mp4',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1',
       ];
 
-      ffmpegProcess = spawn(ffmpegPath, args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      // If subtitle tracks were requested, add them as additional file outputs
+      if (pendingSubtitleTracks && pendingSubtitleTracks.length > 0 && !isLive) {
+        console.log('[FFmpeg] Including subtitle extraction for tracks:', pendingSubtitleTracks);
+        for (const st of pendingSubtitleTracks) {
+          const tmpFile = path.join(os.tmpdir(), `dashplayer-sub-${Date.now()}-${st}.vtt`);
+          args.push('-map', `0:s:${st}?`, '-c:s', 'webvtt', tmpFile);
+          activeSubtitleFiles[st] = tmpFile;
+          // Also cache it
+          const cacheKey = `${sourceUrl}::${st}`;
+          subtitleCache.set(cacheKey, { ready: false, path: tmpFile });
+        }
+        pendingSubtitleTracks = null;
+      }
+
+      // Add reconnect for live streams
+      if (isLive) {
+        args.splice(2, 0, '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '3');
+      }
+
+      console.log('[FFmpeg] Command args:', args.filter(a => !a.includes('Mozilla')).join(' '));
+
+      ffmpegProcess = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
       let headersSent = false;
       let stderrBuf = '';
+      const proc = ffmpegProcess;
 
-      ffmpegProcess.stdout.on('data', (chunk) => {
+      proc.stdout.on('data', (chunk) => {
+        if (res.writableEnded || res.destroyed) return;
         if (!headersSent) {
           headersSent = true;
           console.log('[FFmpeg] First data received, streaming to browser');
-          res.writeHead(200, {
+          safeWriteHead(res, 200, {
             'Content-Type': 'video/mp4',
             'Access-Control-Allow-Origin': '*',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
           });
         }
-        try { res.write(chunk); } catch(e) {}
+        safeWrite(res, chunk);
       });
 
-      ffmpegProcess.stderr.on('data', (d) => {
+      proc.stderr.on('data', (d) => {
         const msg = d.toString();
         stderrBuf += msg;
-        // Log important lines (skip progress/stats)
         const lines = msg.split('\n').filter(l => l.trim() && !l.includes('frame=') && !l.includes('size='));
         lines.forEach(l => { if (l.trim()) console.log('[FFmpeg]', l.trim()); });
       });
 
-      ffmpegProcess.on('exit', (code) => {
-        console.log('[FFmpeg] Process exited with code', code);
+      proc.on('exit', (code) => {
+        console.log('[FFmpeg] Process exited code', code);
         if (currentTranscodeResponse === res) currentTranscodeResponse = null;
+        // Mark any subtitle files as ready
+        for (const [idx, tmpFile] of Object.entries(activeSubtitleFiles)) {
+          if (fs.existsSync(tmpFile)) {
+            const size = fs.statSync(tmpFile).size;
+            console.log(`[FFmpeg] Subtitle file ${idx}: ${tmpFile} (${size} bytes)`);
+            // Find and update cache
+            for (const [key, val] of subtitleCache.entries()) {
+              if (val.path === tmpFile) { val.ready = true; break; }
+            }
+          }
+        }
         if (!headersSent) {
           const errDetail = stderrBuf.slice(-800).trim();
-          console.log('[FFmpeg] No output produced! stderr:', errDetail);
-          try { res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }); } catch(e) {}
-          try { res.end('FFmpeg error: ' + errDetail); } catch(e) {}
+          console.log('[FFmpeg] No output! stderr:', errDetail);
+          safeWriteHead(res, 500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+          safeEnd(res, 'FFmpeg error: ' + errDetail);
         } else {
-          try { res.end(); } catch(e) {}
+          safeEnd(res);
         }
-        ffmpegProcess = null;
+        if (ffmpegProcess === proc) ffmpegProcess = null;
       });
 
-      ffmpegProcess.on('error', (err) => {
+      proc.on('error', (err) => {
         console.log('[FFmpeg] Process error:', err.message);
         if (!headersSent) {
-          res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-          res.end('FFmpeg error: ' + err.message);
-        } else {
-          res.end();
+          safeWriteHead(res, 500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
         }
-        ffmpegProcess = null;
+        safeEnd(res, 'FFmpeg error: ' + err.message);
+        if (ffmpegProcess === proc) ffmpegProcess = null;
       });
 
       req.on('close', () => {
@@ -408,40 +443,31 @@ ipcMain.handle('clear-proxy', async () => {
 
 /* ══════ FFmpeg IPC Handlers ══════ */
 
-// Check FFmpeg availability
 ipcMain.handle('ffmpeg-status', () => ({
   available: !!ffmpegPath,
   ffmpegPath,
   port: localServerPort,
 }));
 
-// Probe media file with ffmpeg -i (get audio/subtitle tracks)
+// Probe media file
 ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
 
   return new Promise((resolve) => {
-    // ffmpeg -i <url> exits with error (no output specified) but prints stream info to stderr
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
     execFile(ffmpegPath, [
       '-hide_banner',
       '-user_agent', ua,
-      '-probesize', '5000000',       // 5MB - just enough for metadata
-      '-analyzeduration', '3000000', // 3 seconds
+      '-probesize', '5000000',
+      '-analyzeduration', '3000000',
       '-i', url,
     ], { timeout: 8000 }, (err, stdout, stderr) => {
       const output = stderr || '';
-      if (!output) {
-        resolve({ success: false, error: 'No output from ffmpeg' });
-        return;
-      }
+      if (!output) { resolve({ success: false, error: 'No output' }); return; }
       try {
         const audio = [];
         const subtitle = [];
         let audioIdx = 0, subIdx = 0;
-
-        // Parse lines like: Stream #0:1(tur): Audio: aac (HE-AAC), 48000 Hz, stereo
-        // Or: Stream #0:1(tur): Audio: aac ... (default)
-        // Title lines: title           : Turkish
         const lines = output.split('\n');
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
@@ -449,52 +475,43 @@ ipcMain.handle('ffmpeg-probe', async (event, { url }) => {
           const subMatch = line.match(/Stream #\d+:(\d+)(?:\((\w+)\))?.*?Subtitle:\s*(\w+)/);
 
           if (audioMatch) {
-            // Check next lines for title metadata
             let title = '';
             for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-              const titleMatch = lines[j].match(/^\s+title\s*:\s*(.+)$/i);
-              if (titleMatch) { title = titleMatch[1].trim(); break; }
+              const tm = lines[j].match(/^\s+title\s*:\s*(.+)$/i);
+              if (tm) { title = tm[1].trim(); break; }
               if (lines[j].match(/Stream #/)) break;
             }
-            audio.push({
-              index: audioIdx++,
-              streamIndex: parseInt(audioMatch[1]),
-              codec: audioMatch[3],
-              lang: audioMatch[2] || '',
-              title: title,
-            });
+            audio.push({ index: audioIdx++, streamIndex: parseInt(audioMatch[1]), codec: audioMatch[3], lang: audioMatch[2] || '', title });
           }
-
           if (subMatch) {
             let title = '';
             for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-              const titleMatch = lines[j].match(/^\s+title\s*:\s*(.+)$/i);
-              if (titleMatch) { title = titleMatch[1].trim(); break; }
+              const tm = lines[j].match(/^\s+title\s*:\s*(.+)$/i);
+              if (tm) { title = tm[1].trim(); break; }
               if (lines[j].match(/Stream #/)) break;
             }
-            subtitle.push({
-              index: subIdx++,
-              streamIndex: parseInt(subMatch[1]),
-              codec: subMatch[3],
-              lang: subMatch[2] || '',
-              title: title,
-            });
+            subtitle.push({ index: subIdx++, streamIndex: parseInt(subMatch[1]), codec: subMatch[3], lang: subMatch[2] || '', title });
           }
         }
-
         console.log(`[FFmpeg probe] Found ${audio.length} audio, ${subtitle.length} subtitle tracks`);
         resolve({ success: true, audio, subtitle });
       } catch (e) {
-        console.log('[FFmpeg probe] Parse error:', e.message);
-        resolve({ success: false, error: 'Failed to parse probe data' });
+        resolve({ success: false, error: 'Parse error: ' + e.message });
       }
     });
   });
 });
 
-// Get local remux URL (browser will connect to our local server)
-ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack, seek }) => {
+// Get local remux URL
+ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack, seek, subtitleTracks }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
+
+  // Store subtitle tracks for the next server request to include
+  if (subtitleTracks && subtitleTracks.length > 0) {
+    pendingSubtitleTracks = subtitleTracks;
+    activeSubtitleFiles = {};
+  }
+
   const port = await ensureLocalServer();
   const audioParam = audioTrack ? `&audio=${audioTrack}` : '';
   const seekParam = seek ? `&seek=${seek}` : '';
@@ -503,39 +520,52 @@ ipcMain.handle('ffmpeg-transcode-url', async (event, { url, audioTrack, seek }) 
   return { success: true, url: transUrl };
 });
 
-// Extract subtitle - returns pipe URL immediately for streaming
+// Extract subtitle - returns pipe URL
 ipcMain.handle('ffmpeg-subtitle-url', async (event, { url, subIndex }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
 
   const cacheKey = `${url}::${subIndex || 0}`;
 
-  // Check cache first - if we have a completed extraction, serve from file
+  // Check cache first
   if (subtitleCache.has(cacheKey)) {
     const cached = subtitleCache.get(cacheKey);
-    if (cached.ready && cached.path && fs.existsSync(cached.path)) {
-      console.log('[FFmpeg sub] Using cached subtitle:', cached.path);
-      const port = await ensureLocalServer();
-      return { success: true, url: `http://127.0.0.1:${port}/stream?mode=subtitle-file&path=${encodeURIComponent(cached.path)}` };
+    if (cached.path && fs.existsSync(cached.path)) {
+      const size = fs.statSync(cached.path).size;
+      if (size > 10) { // More than just "WEBVTT\n\n"
+        console.log('[FFmpeg sub] Using cached subtitle:', cached.path, '(' + size + ' bytes)');
+        const port = await ensureLocalServer();
+        return { success: true, url: `http://127.0.0.1:${port}/stream?mode=subtitle-file&path=${encodeURIComponent(cached.path)}` };
+      }
     }
   }
 
-  // Return the pipe URL immediately - FFmpeg will stream data as it extracts
+  // Also check activeSubtitleFiles (from multi-output transcode)
+  if (activeSubtitleFiles[subIndex || 0]) {
+    const filePath = activeSubtitleFiles[subIndex || 0];
+    if (fs.existsSync(filePath)) {
+      const size = fs.statSync(filePath).size;
+      if (size > 10) {
+        console.log('[FFmpeg sub] Using active subtitle file:', filePath, '(' + size + ' bytes)');
+        const port = await ensureLocalServer();
+        return { success: true, url: `http://127.0.0.1:${port}/stream?mode=subtitle-file&path=${encodeURIComponent(filePath)}` };
+      }
+    }
+  }
+
+  // Pipe extraction
   const port = await ensureLocalServer();
   const pipeUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&subIndex=${subIndex || 0}&mode=subtitle`;
-  console.log(`[FFmpeg sub] Returning pipe URL for subtitle track ${subIndex || 0}`);
   return { success: true, url: pipeUrl };
 });
 
-// Get local radio remux URL (audio-only, no video)
+// Radio URL (audio-only)
 ipcMain.handle('ffmpeg-radio-url', async (event, { url }) => {
   if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
   const port = await ensureLocalServer();
-  const radioUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&mode=radio`;
-  console.log('[FFmpeg] Radio URL:', radioUrl);
-  return { success: true, url: radioUrl };
+  return { success: true, url: `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&mode=radio` };
 });
 
-// Stop current FFmpeg process
+// Stop FFmpeg
 ipcMain.handle('ffmpeg-stop', () => {
   stopFfmpeg();
   return { success: true };
@@ -543,23 +573,18 @@ ipcMain.handle('ffmpeg-stop', () => {
 
 app.whenReady().then(() => {
   ffmpegPath = findBinary('ffmpeg');
-
-  // Log FFmpeg version for debugging
   if (ffmpegPath) {
     try {
       const ver = require('child_process').execFileSync(ffmpegPath, ['-version'], { timeout: 5000, encoding: 'utf8' });
       console.log('[FFmpeg] Version:', ver.split('\n')[0]);
-    } catch(e) { console.log('[FFmpeg] Version check failed:', e.message); }
+    } catch(e) {}
     ensureLocalServer();
   } else {
-    console.log('[FFmpeg] WARNING: FFmpeg not found! Transcode features unavailable.');
+    console.log('[FFmpeg] WARNING: FFmpeg not found!');
   }
 
   createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
 app.on('window-all-closed', () => {

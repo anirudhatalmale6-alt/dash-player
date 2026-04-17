@@ -1143,92 +1143,45 @@ function VideoPlayer({ url, onClose, title, inline }) {
 
     const isElectron = !!window.dashPlayer?.ffmpegSubtitleUrl;
     if (trackId >= 0 && isElectron && url) {
-      console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
+      console.log('[DashPlayer] Loading subtitle track', trackId);
       setCurrentSubText('Loading subtitles...');
 
-      // IMPORTANT: Stop video FFmpeg first to free the single IPTV connection
-      // (subtitle extraction needs its own connection, and account only allows 1)
-      const currentTime = videoRef.current?.currentTime || 0;
-      const isLive = url.includes('/live/') || url.includes('/timeshift/');
-      const subUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
+      // Subtitles are extracted in the background by the main FFmpeg process
+      // (added when user clicked Tracks button). Just fetch the cached file.
+      const subUrl = url.includes('/live/') ? url.replace(/\.\w+$/, '.ts') : url;
 
-      try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
-      await new Promise(r => setTimeout(r, 100));
-
-      const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
-      if (result.success && result.url) {
-        try {
-          console.log('[DashPlayer] Fetching subtitle from:', result.url);
-          const controller = new AbortController();
-          const fetchTimeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
-          const resp = await fetch(result.url, { signal: controller.signal });
-          clearTimeout(fetchTimeout);
-
-          // Stream the response - start showing subtitles as soon as we get data
-          const reader = resp.body.getReader();
-          const decoder = new TextDecoder('utf-8');
-          let vttText = '';
-          let partialCues = [];
-          let started = false;
-
-          const readChunk = async () => {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              vttText += decoder.decode(value, { stream: true });
-              // Parse cues progressively
-              const newCues = parseVTT(vttText);
-              if (newCues.length > partialCues.length) {
-                partialCues = newCues;
-                if (!started && partialCues.length > 0) {
-                  started = true;
-                  console.log(`[DashPlayer] First ${partialCues.length} subtitle cues ready`);
-                  startSubtitleSync(partialCues);
-                } else if (started) {
-                  // Update existing sync with more cues
-                  subtitleCuesRef.current = partialCues;
-                  setSubtitleCues(partialCues);
-                }
+      // Poll for subtitle file readiness (FFmpeg extracts while video plays)
+      let attempts = 0;
+      const maxAttempts = 30; // 30 seconds max wait
+      const pollSubtitle = async () => {
+        while (attempts < maxAttempts) {
+          attempts++;
+          const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
+          if (result.success && result.url) {
+            try {
+              const resp = await fetch(result.url);
+              const vttText = await resp.text();
+              const cues = parseVTT(vttText);
+              if (cues.length > 0) {
+                console.log(`[DashPlayer] Loaded ${cues.length} subtitle cues`);
+                startSubtitleSync(cues);
+                return;
               }
+            } catch(e) {
+              console.log('[DashPlayer] Subtitle fetch attempt', attempts, 'error:', e.message);
             }
-          };
-          await readChunk();
-
-          // Final parse with all data
-          vttText += decoder.decode(); // flush
-          const finalCues = parseVTT(vttText);
-          console.log(`[DashPlayer] Subtitle extraction complete: ${finalCues.length} cues total, ${vttText.length} bytes`);
-          if (finalCues.length > 0) {
-            subtitleCuesRef.current = finalCues;
-            setSubtitleCues(finalCues);
-            if (!started) startSubtitleSync(finalCues);
-          } else {
-            console.log('[DashPlayer] No subtitle cues found in response');
-            setCurrentSubText('');
           }
-        } catch (fetchErr) {
-          console.log('[DashPlayer] Subtitle fetch error:', fetchErr);
-          setCurrentSubText('');
+          // Wait 1 second before retrying (file may still be growing)
+          if (attempts < maxAttempts) {
+            console.log(`[DashPlayer] Subtitle not ready yet, attempt ${attempts}/${maxAttempts}`);
+            await new Promise(r => setTimeout(r, 1000));
+          }
         }
-      } else {
-        console.log('[DashPlayer] FFmpeg subtitle URL failed:', result);
-        setCurrentSubText('');
-      }
-
-      // Restart video playback at the saved position (we stopped FFmpeg for subtitle extraction)
-      console.log('[DashPlayer] Restarting video after subtitle extraction at position', currentTime);
-      const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
-      const videoResult = await window.dashPlayer.ffmpegTranscodeUrl({
-        url: streamUrl,
-        audioTrack: selectedAudio || 0,
-        seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
-      });
-      if (videoResult.success && videoResult.url && videoRef.current) {
-        setUsingFfmpeg(true);
-        videoRef.current.src = videoResult.url;
-        videoRef.current.load();
-        videoRef.current.play().catch(() => {});
-      }
+        console.log('[DashPlayer] Subtitle extraction timed out');
+        setCurrentSubText('Subtitles not available for this content');
+        setTimeout(() => setCurrentSubText(''), 3000);
+      };
+      pollSubtitle();
     }
   };
 
@@ -1260,19 +1213,43 @@ function VideoPlayer({ url, onClose, title, inline }) {
           id: i, label: t.title || t.lang || `Audio ${i + 1}`, lang: t.lang || '', codec: t.codec,
         })));
       }
+      let foundSubTracks = [];
       if (probeResult.subtitle && probeResult.subtitle.length > 0) {
-        // Filter out bitmap subtitle formats (PGS, VobSub, DVB) - they can't convert to WebVTT
         const bitmapCodecs = ['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'pgssub', 'dvdsub', 'dvbsub'];
         const textSubs = probeResult.subtitle.filter(t => !bitmapCodecs.includes(t.codec?.toLowerCase()));
         if (textSubs.length > 0) {
+          foundSubTracks = textSubs;
           setSubtitleTracks(textSubs.map((t, i) => ({
             id: t.index, label: t.title || t.lang || `Subtitle ${t.index + 1}`, lang: t.lang || '', codec: t.codec,
           })));
         } else {
-          console.log('[DashPlayer] Only bitmap subtitles found (PGS/VobSub) - not supported for extraction');
+          console.log('[DashPlayer] Only bitmap subtitles found - not supported');
         }
       }
       probedRef.current = true;
+
+      // If subtitles found, restart FFmpeg with embedded subtitle extraction
+      // This extracts subtitles within the SAME FFmpeg process (single IPTV connection)
+      if (foundSubTracks.length > 0 && window.dashPlayer?.ffmpegTranscodeUrl) {
+        const currentTime = videoRef.current?.currentTime || 0;
+        const streamUrl = url;
+        const subIndices = foundSubTracks.map(t => t.index);
+        console.log('[DashPlayer] Restarting FFmpeg with subtitle extraction for tracks:', subIndices);
+        try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
+        await new Promise(r => setTimeout(r, 200));
+        const result = await window.dashPlayer.ffmpegTranscodeUrl({
+          url: streamUrl,
+          audioTrack: selectedAudio || 0,
+          seek: currentTime > 1 ? Math.floor(currentTime) : undefined,
+          subtitleTracks: subIndices,
+        });
+        if (result.success && result.url && videoRef.current) {
+          setUsingFfmpeg(true);
+          videoRef.current.src = result.url;
+          videoRef.current.load();
+          videoRef.current.play().catch(() => {});
+        }
+      }
     } catch (e) {
       console.log('[DashPlayer] Probe error:', e);
     }
