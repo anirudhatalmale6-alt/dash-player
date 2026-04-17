@@ -961,7 +961,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       return;
     }
 
-    const startFfmpeg = async (audioTrack = 0) => {
+    const startFfmpeg = async () => {
       if (!window.dashPlayer?.ffmpegTranscodeUrl) {
         setError('FFmpeg not available - please install FFmpeg');
         setLoading(false);
@@ -972,7 +972,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       console.log('[DashPlayer] FFmpeg playing:', streamUrl, 'gen:', myGen);
       setCurrentFormat('FFmpeg');
       try {
-        const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl, audioTrack });
+        const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl });
         if (myGen !== generationRef.current) return; // stale - channel changed
         if (!result.success || !result.url) {
           console.log('[DashPlayer] FFmpeg URL failed');
@@ -1005,28 +1005,17 @@ function VideoPlayer({ url, onClose, title, inline }) {
           const errMsg = video.error?.message || '';
           console.log('[DashPlayer] FFmpeg playback error:', errMsg, 'gen:', myGen);
 
-          // Auto-reconnect for decode errors (PIPELINE_ERROR_DECODE = codec issue)
-          if (playbackStarted && !reconnecting) {
+          // Auto-reconnect once for live streams
+          if (playbackStarted && isLive && !reconnecting) {
             reconnecting = true;
-            const isDecodeError = errMsg.includes('PIPELINE_ERROR_DECODE') || errMsg.includes('Failed to send video packet');
-            console.log('[DashPlayer] Reconnecting FFmpeg...', isDecodeError ? '(forcing video transcode)' : '');
-            // Stop current first
+            console.log('[DashPlayer] Reconnecting FFmpeg...');
             if (window.dashPlayer?.ffmpegStop) await window.dashPlayer.ffmpegStop().catch(() => {});
             if (myGen !== generationRef.current) return;
-            // If decode error, force video transcoding (the codec copy didn't work)
-            const r2 = await window.dashPlayer.ffmpegTranscodeUrl({
-              url: streamUrl, audioTrack,
-              forceTranscode: isDecodeError ? true : undefined,
-            });
+            const r2 = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl });
             if (r2.success && r2.url && mountedRef.current && myGen === generationRef.current) {
               video.src = r2.url;
               video.load();
               video.play().catch(() => {});
-              // Re-attach error handler for the retry (but don't reconnect again)
-              video.addEventListener('error', () => {
-                if (myGen !== generationRef.current) return;
-                console.log('[DashPlayer] FFmpeg retry also failed');
-              }, { once: true });
             } else if (myGen === generationRef.current) {
               setError('Stream connection lost');
             }
@@ -1058,7 +1047,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
     };
 
     // Start FFmpeg player
-    startFfmpeg(0);
+    startFfmpeg();
 
     return () => {
       mountedRef.current = false; // mark as unmounted BEFORE cleanup to prevent error handlers from firing
@@ -1071,20 +1060,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
-    if (usingFfmpeg && window.dashPlayer?.ffmpegTranscodeUrl && url) {
-      // Re-transcode with different audio track via FFmpeg
-      const currentTime = videoRef.current?.currentTime || 0;
-      const isLive = url.includes('/live/') || url.includes('/timeshift/');
-      const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
-      console.log('[DashPlayer] FFmpeg: switching to audio track', trackId, 'at position', currentTime);
-      // Pass seek time so FFmpeg starts from current position (not beginning)
-      const result = await window.dashPlayer.ffmpegTranscodeUrl({
-        url: streamUrl, audioTrack: trackId,
-        seek: !isLive && currentTime > 0 ? Math.floor(currentTime) : undefined,
-      });
-      if (result.success && result.url && videoRef.current) {
-        videoRef.current.src = result.url;
-        videoRef.current.play().catch(() => {});
+    // Use browser's native audioTracks API - no FFmpeg restart needed!
+    // All audio tracks are mapped at start, browser switches instantly
+    if (videoRef.current && videoRef.current.audioTracks) {
+      const tracks = videoRef.current.audioTracks;
+      console.log('[DashPlayer] Switching audio track to', trackId, '(total:', tracks.length, ')');
+      for (let i = 0; i < tracks.length; i++) {
+        tracks[i].enabled = (i === trackId);
       }
     }
   };
@@ -1148,52 +1130,9 @@ function VideoPlayer({ url, onClose, title, inline }) {
       console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
       setCurrentSubText('Loading subtitles...');
 
-      // If using FFmpeg transcode, restart it with subtitle extraction included
-      // This uses the SAME connection - no extra connections!
-      if (usingFfmpeg && window.dashPlayer?.ffmpegTranscodeUrl) {
-        const isLive = url.includes('/live/') || url.includes('/timeshift/');
-        const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
-        const subCount = subtitleTracks.length || 1;
-        const currentTime = videoRef.current?.currentTime || 0;
-        console.log('[DashPlayer] Restarting FFmpeg transcode with subtitle extraction at position', currentTime);
-        const result = await window.dashPlayer.ffmpegTranscodeUrl({
-          url: streamUrl, audioTrack: selectedAudio, subtitleCount: subCount,
-          seek: !isLive && currentTime > 0 ? Math.floor(currentTime) : undefined,
-        });
-        if (result.success && result.url && videoRef.current) {
-          videoRef.current.src = result.url;
-          videoRef.current.load();
-          videoRef.current.play().catch(() => {});
-          // Wait for subtitles to be extracted and cached, then load them
-          const waitForSub = async (attempts) => {
-            for (let i = 0; i < attempts; i++) {
-              await new Promise(r => setTimeout(r, 3000)); // check every 3s
-              if (!mountedRef.current) return;
-              const subResult = await window.dashPlayer.ffmpegSubtitleUrl({ url: streamUrl, subIndex: trackId });
-              if (subResult.success && subResult.url) {
-                console.log('[DashPlayer] Subtitle cached from transcode, fetching...');
-                try {
-                  const resp = await fetch(subResult.url);
-                  const vttText = await resp.text();
-                  if (vttText.length > 20 && vttText.includes('WEBVTT')) {
-                    const cues = parseVTT(vttText);
-                    if (cues.length > 0) {
-                      subtitleCuesRef.current = cues;
-                      startSubtitleSync(cues);
-                      return;
-                    }
-                  }
-                } catch(e) { console.log('[DashPlayer] Sub fetch error:', e); }
-              }
-            }
-            setCurrentSubText(''); // give up after all attempts
-          };
-          waitForSub(20); // check for up to 60 seconds
-          return;
-        }
-      }
-
-      const result = await window.dashPlayer.ffmpegSubtitleUrl({ url, subIndex: trackId });
+      // Extract subtitle separately - does NOT restart main video transcode
+      const subUrl = url.includes('/live/') ? url.replace(/\.\w+$/, '.ts') : url;
+      const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
       if (result.success && result.url) {
         try {
           console.log('[DashPlayer] Fetching subtitle from:', result.url);
@@ -2374,12 +2313,32 @@ function RadioScreen({ onBack, api }) {
     const tryUrl = () => {
       if (settled) return;
       if (tried >= urls.length) {
-        // All audio URLs failed - fall back to VideoPlayer (for .ts/.m3u8 radio streams)
+        // All audio URLs failed - use FFmpeg remux for .ts radio streams (keeps purple bar)
         settled = true;
-        console.log('[DashPlayer] Audio URLs failed, falling back to VideoPlayer for radio');
-        setRadioLoading(false);
         const liveUrl = api.getLiveUrl(station.stream_id);
-        setPlayingUrl(liveUrl);
+        const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
+        if (isElectron) {
+          // Use FFmpeg to remux the .ts stream to fMP4 audio - plays in Audio element
+          console.log('[DashPlayer] Using FFmpeg for radio stream:', liveUrl);
+          window.dashPlayer.ffmpegTranscodeUrl({ url: liveUrl.replace(/\.\w+$/, '.ts') }).then(result => {
+            if (result.success && result.url) {
+              const audio = new Audio();
+              audioRef.current = audio;
+              audio.addEventListener('canplay', () => { station._startTime = Date.now(); setRadioLoading(false); audio.play().catch(() => {}); }, { once: true });
+              audio.addEventListener('error', () => { setRadioLoading(false); setRadioError('Stream unavailable'); }, { once: true });
+              audio.src = result.url;
+              audio.load();
+            } else {
+              setRadioLoading(false);
+              setRadioError('Stream unavailable');
+            }
+          });
+        } else {
+          // Mobile: use HLS for radio
+          console.log('[DashPlayer] Using HLS for radio stream');
+          setRadioLoading(false);
+          setPlayingUrl(liveUrl);
+        }
         return;
       }
       const url = urls[tried++];
