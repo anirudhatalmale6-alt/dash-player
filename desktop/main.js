@@ -88,6 +88,68 @@ function ensureLocalServer() {
       const audioTrack = url.searchParams.get('audio') || '0';
       const mode = url.searchParams.get('mode') || 'transcode'; // transcode | subtitle
 
+      if (mode === 'radio') {
+        // Audio-only remux for radio streams - output as MP3 for HTML5 Audio compatibility
+        console.log(`[FFmpeg] Radio remux:`, sourceUrl);
+        stopFfmpeg(); // Kill previous FFmpeg + end previous response
+        currentTranscodeResponse = res;
+
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
+        const args = [
+          '-hide_banner', '-loglevel', 'info',
+          '-user_agent', userAgent,
+          '-probesize', '500000',       // 500KB - radio streams are small
+          '-analyzeduration', '1000000', // 1s
+          '-i', sourceUrl,
+          '-vn',                         // no video
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-ac', '2',                    // stereo
+          '-f', 'adts',                  // raw AAC frames - works in Audio element
+          'pipe:1',
+        ];
+
+        ffmpegProcess = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+        let headersSent = false;
+        ffmpegProcess.stdout.on('data', (chunk) => {
+          if (!headersSent) {
+            headersSent = true;
+            console.log('[FFmpeg] Radio: first data received');
+            res.writeHead(200, {
+              'Content-Type': 'audio/aac',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            });
+          }
+          try { res.write(chunk); } catch(e) {}
+        });
+        ffmpegProcess.stderr.on('data', (d) => {
+          const msg = d.toString();
+          const lines = msg.split('\n').filter(l => l.trim() && !l.includes('frame=') && !l.includes('size='));
+          lines.forEach(l => { if (l.trim()) console.log('[FFmpeg radio]', l.trim()); });
+        });
+        ffmpegProcess.on('exit', (code) => {
+          console.log('[FFmpeg] Radio process exited with code', code);
+          if (currentTranscodeResponse === res) currentTranscodeResponse = null;
+          if (!headersSent) {
+            try { res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }); } catch(e) {}
+            try { res.end('Radio stream error'); } catch(e) {}
+          } else {
+            try { res.end(); } catch(e) {}
+          }
+          ffmpegProcess = null;
+        });
+        ffmpegProcess.on('error', (err) => {
+          console.log('[FFmpeg] Radio process error:', err.message);
+          if (!headersSent) { res.writeHead(500); res.end(err.message); } else { res.end(); }
+          ffmpegProcess = null;
+        });
+        req.on('close', () => { console.log('[FFmpeg] Radio client disconnected'); stopFfmpeg(); });
+        return;
+      }
+
       if (mode === 'subtitle-file') {
         // Serve a pre-extracted subtitle temp file
         const filePath = url.searchParams.get('path');
@@ -462,6 +524,15 @@ ipcMain.handle('ffmpeg-subtitle-url', async (event, { url, subIndex }) => {
   const pipeUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&subIndex=${subIndex || 0}&mode=subtitle`;
   console.log(`[FFmpeg sub] Returning pipe URL for subtitle track ${subIndex || 0}`);
   return { success: true, url: pipeUrl };
+});
+
+// Get local radio remux URL (audio-only, no video)
+ipcMain.handle('ffmpeg-radio-url', async (event, { url }) => {
+  if (!ffmpegPath) return { success: false, error: 'FFmpeg not available' };
+  const port = await ensureLocalServer();
+  const radioUrl = `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(url)}&mode=radio`;
+  console.log('[FFmpeg] Radio URL:', radioUrl);
+  return { success: true, url: radioUrl };
 });
 
 // Stop current FFmpeg process

@@ -1060,18 +1060,25 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
-    if (usingFfmpeg && window.dashPlayer?.ffmpegTranscodeUrl && url) {
+    // Use Electron check instead of usingFfmpeg state (state can be stale)
+    const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
+    if (isElectron && url) {
       const currentTime = videoRef.current?.currentTime || 0;
       const isLive = url.includes('/live/') || url.includes('/timeshift/');
       const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
-      console.log('[DashPlayer] Switching audio track', trackId, 'at position', currentTime);
+      console.log('[DashPlayer] Switching audio track to', trackId, 'at position', currentTime, 'url:', streamUrl);
+      // Stop current FFmpeg first
+      try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
+      // Small delay to ensure FFmpeg process is fully stopped
+      await new Promise(r => setTimeout(r, 100));
       // Restart FFmpeg with different audio track + seek to current position
-      if (window.dashPlayer?.ffmpegStop) await window.dashPlayer.ffmpegStop().catch(() => {});
       const result = await window.dashPlayer.ffmpegTranscodeUrl({
         url: streamUrl, audioTrack: trackId,
         seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
       });
+      console.log('[DashPlayer] Audio switch result:', result.success, result.url ? 'has url' : 'no url');
       if (result.success && result.url && videoRef.current) {
+        setUsingFfmpeg(true);
         videoRef.current.src = result.url;
         videoRef.current.load();
         videoRef.current.play().catch(() => {});
@@ -1134,18 +1141,26 @@ function VideoPlayer({ url, onClose, title, inline }) {
       return;
     }
 
-    if (trackId >= 0 && window.dashPlayer?.ffmpegSubtitleUrl && url) {
+    const isElectron = !!window.dashPlayer?.ffmpegSubtitleUrl;
+    if (trackId >= 0 && isElectron && url) {
       console.log('[DashPlayer] FFmpeg: extracting subtitle track', trackId);
       setCurrentSubText('Loading subtitles...');
 
-      // Extract subtitle separately - does NOT restart main video transcode
-      const subUrl = url.includes('/live/') ? url.replace(/\.\w+$/, '.ts') : url;
+      // IMPORTANT: Stop video FFmpeg first to free the single IPTV connection
+      // (subtitle extraction needs its own connection, and account only allows 1)
+      const currentTime = videoRef.current?.currentTime || 0;
+      const isLive = url.includes('/live/') || url.includes('/timeshift/');
+      const subUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
+
+      try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
+      await new Promise(r => setTimeout(r, 100));
+
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
       if (result.success && result.url) {
         try {
           console.log('[DashPlayer] Fetching subtitle from:', result.url);
           const controller = new AbortController();
-          const fetchTimeout = setTimeout(() => controller.abort(), 120000); // 120s for large files
+          const fetchTimeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
           const resp = await fetch(result.url, { signal: controller.signal });
           clearTimeout(fetchTimeout);
 
@@ -1198,6 +1213,21 @@ function VideoPlayer({ url, onClose, title, inline }) {
       } else {
         console.log('[DashPlayer] FFmpeg subtitle URL failed:', result);
         setCurrentSubText('');
+      }
+
+      // Restart video playback at the saved position (we stopped FFmpeg for subtitle extraction)
+      console.log('[DashPlayer] Restarting video after subtitle extraction at position', currentTime);
+      const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
+      const videoResult = await window.dashPlayer.ffmpegTranscodeUrl({
+        url: streamUrl,
+        audioTrack: selectedAudio || 0,
+        seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
+      });
+      if (videoResult.success && videoResult.url && videoRef.current) {
+        setUsingFfmpeg(true);
+        videoRef.current.src = videoResult.url;
+        videoRef.current.load();
+        videoRef.current.play().catch(() => {});
       }
     }
   };
@@ -2321,19 +2351,38 @@ function RadioScreen({ onBack, api }) {
     const tryUrl = () => {
       if (settled) return;
       if (tried >= urls.length) {
-        // All audio URLs failed - use FFmpeg remux for .ts radio streams (keeps purple bar)
+        // All audio URLs failed - use FFmpeg for radio streams (audio-only output)
         settled = true;
         const liveUrl = api.getLiveUrl(station.stream_id);
-        const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
+        const isElectron = !!window.dashPlayer?.ffmpegRadioUrl;
         if (isElectron) {
-          // Use FFmpeg to remux the .ts stream to fMP4 audio - plays in Audio element
-          console.log('[DashPlayer] Using FFmpeg for radio stream:', liveUrl);
-          window.dashPlayer.ffmpegTranscodeUrl({ url: liveUrl.replace(/\.\w+$/, '.ts') }).then(result => {
+          // Use FFmpeg radio mode - audio-only AAC output (no video, compatible with Audio element)
+          const radioStreamUrl = liveUrl.replace(/\.\w+$/, '.ts');
+          console.log('[DashPlayer] Using FFmpeg radio for stream:', radioStreamUrl);
+          window.dashPlayer.ffmpegRadioUrl({ url: radioStreamUrl }).then(result => {
             if (result.success && result.url) {
               const audio = new Audio();
               audioRef.current = audio;
               audio.addEventListener('canplay', () => { station._startTime = Date.now(); setRadioLoading(false); audio.play().catch(() => {}); }, { once: true });
-              audio.addEventListener('error', () => { setRadioLoading(false); setRadioError('Stream unavailable'); }, { once: true });
+              audio.addEventListener('error', (e) => {
+                console.log('[DashPlayer] Radio FFmpeg audio error:', e);
+                // Try with .m3u8 as fallback
+                const m3u8Url = liveUrl.replace(/\.\w+$/, '.m3u8');
+                console.log('[DashPlayer] Retrying radio with m3u8:', m3u8Url);
+                window.dashPlayer.ffmpegRadioUrl({ url: m3u8Url }).then(r2 => {
+                  if (r2.success && r2.url) {
+                    const audio2 = new Audio();
+                    audioRef.current = audio2;
+                    audio2.addEventListener('canplay', () => { station._startTime = Date.now(); setRadioLoading(false); audio2.play().catch(() => {}); }, { once: true });
+                    audio2.addEventListener('error', () => { setRadioLoading(false); setRadioError('Stream unavailable'); }, { once: true });
+                    audio2.src = r2.url;
+                    audio2.load();
+                  } else {
+                    setRadioLoading(false);
+                    setRadioError('Stream unavailable');
+                  }
+                });
+              }, { once: true });
               audio.src = result.url;
               audio.load();
             } else {
@@ -2390,6 +2439,8 @@ function RadioScreen({ onBack, api }) {
 
   const handleStop = () => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
+    // Stop FFmpeg if it was used for radio
+    if (window.dashPlayer?.ffmpegStop) window.dashPlayer.ffmpegStop().catch(() => {});
     setPlaying(null);
     setPlayingUrl(null);
     setRadioLoading(false);

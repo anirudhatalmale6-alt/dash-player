@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('dashPlayer', {
   platform: process.platform,
-  version: '3.1.1',
+  version: '3.1.2',
   isElectron: true,
   setProxy: (config) => ipcRenderer.invoke('set-proxy', config),
   clearProxy: () => ipcRenderer.invoke('clear-proxy'),
@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('dashPlayer', {
   ffmpegProbe: (opts) => ipcRenderer.invoke('ffmpeg-probe', opts),
   ffmpegTranscodeUrl: (opts) => ipcRenderer.invoke('ffmpeg-transcode-url', opts),
   ffmpegSubtitleUrl: (opts) => ipcRenderer.invoke('ffmpeg-subtitle-url', opts),
+  ffmpegRadioUrl: (opts) => ipcRenderer.invoke('ffmpeg-radio-url', opts),
   ffmpegStop: () => ipcRenderer.invoke('ffmpeg-stop'),
 });
