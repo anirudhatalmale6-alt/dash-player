@@ -266,12 +266,18 @@ function ensureLocalServer() {
         }
       }
 
+      // Build reconnect args for live streams (placed before -i, after other input options)
+      const reconnectArgs = isLive
+        ? ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '3']
+        : [];
+
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
         ...inputSeekArgs,
         '-probesize', isLive ? '1000000' : '5000000',
         '-analyzeduration', isLive ? '1000000' : '5000000',
+        ...reconnectArgs,
         '-i', sourceUrl,
         ...outputSeekArgs,
         '-map', '0:v:0?',
@@ -279,6 +285,7 @@ function ensureLocalServer() {
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '192k',
+        '-async', '1',
         '-f', 'mp4',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1',
@@ -296,11 +303,6 @@ function ensureLocalServer() {
           subtitleCache.set(cacheKey, { ready: false, path: tmpFile });
         }
         pendingSubtitleTracks = null;
-      }
-
-      // Add reconnect for live streams
-      if (isLive) {
-        args.splice(2, 0, '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '3');
       }
 
       console.log('[FFmpeg] Command args:', args.filter(a => !a.includes('Mozilla')).join(' '));

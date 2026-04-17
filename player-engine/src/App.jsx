@@ -1531,9 +1531,8 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
             <div className="home-recently-scroll">
               {history.slice(0, 12).map(item => (
                 <div key={item.id} className="home-recently-card" onClick={() => {
-                  if (item.type === 'live') onNavigate('live');
-                  else if (item.type === 'vod') onNavigate('vod');
-                  else onNavigate('series');
+                  const section = item.type === 'live' ? 'live' : item.type === 'vod' ? 'vod' : 'series';
+                  onNavigate(section, item);
                 }}>
                   <div className="home-recently-poster" style={item.icon ? { backgroundImage: `url(${item.icon})` } : {}}>
                     {!item.icon && (item.type === 'live' ? '\u{1F4FA}' : item.type === 'vod' ? '\u{1F3AC}' : '\u{1F3A5}')}
@@ -1560,7 +1559,7 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
 }
 
 /* ══════ LIVE TV SCREEN ══════ */
-function LiveTVScreen({ onBack, api }) {
+function LiveTVScreen({ onBack, api, autoPlayItem, onConsumeAutoPlay }) {
   const [categories, setCategories] = useState([{ category_id: 'all', category_name: 'All Channels' }]);
   const [channels, setChannels] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -1611,6 +1610,25 @@ function LiveTVScreen({ onBack, api }) {
     fetchStreams();
     return () => { cancelled = true; };
   }, [selectedCategory, api]);
+
+  // Auto-play a channel from Recently Watched
+  useEffect(() => {
+    if (!autoPlayItem || !autoPlayItem.streamId || !channels.length) return;
+    const streamId = autoPlayItem.streamId.toString().replace('live_', '');
+    const ch = channels.find(c => String(c.stream_id) === streamId);
+    if (ch) {
+      setSelectedChannel(ch);
+      setPlayingChannel(ch);
+      if (onConsumeAutoPlay) onConsumeAutoPlay();
+    } else if (!channelLoading) {
+      // Channel not in current category - switch to 'all' to find it
+      if (selectedCategory !== 'all') {
+        setSelectedCategory('all');
+      } else if (onConsumeAutoPlay) {
+        onConsumeAutoPlay(); // Channel not found at all
+      }
+    }
+  }, [autoPlayItem, channels, channelLoading]);
 
   const filtered = useMemo(() => {
     let list = channels.filter(ch => {
@@ -1801,7 +1819,7 @@ function LiveTVScreen({ onBack, api }) {
 }
 
 /* ══════ MEDIA SCREEN (Movies / Series) ══════ */
-function MediaScreen({ type, onBack, api }) {
+function MediaScreen({ type, onBack, api, autoPlayItem, onConsumeAutoPlay }) {
   const isVod = type === 'vod';
   const title = isVod ? t('movies') : t('series');
   const [categories, setCategories] = useState([]);
@@ -1879,6 +1897,20 @@ function MediaScreen({ type, onBack, api }) {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const visibleItems = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const goToPage = (page) => { setCurrentPage(page); if (gridRef.current) gridRef.current.scrollTop = 0; };
+
+  // Auto-play item from Recently Watched
+  useEffect(() => {
+    if (!autoPlayItem || !autoPlayItem.streamId || !allItems.length || itemsLoading) return;
+    const streamId = autoPlayItem.streamId.toString().replace('vod_', '');
+    if (isVod) {
+      const item = allItems.find(i => String(i.stream_id) === streamId);
+      if (item && api) {
+        setPlayingItem(item);
+        if (onConsumeAutoPlay) onConsumeAutoPlay();
+      }
+    }
+    if (onConsumeAutoPlay) onConsumeAutoPlay();
+  }, [autoPlayItem, allItems, itemsLoading]);
 
   const handleSeriesClick = async (item) => {
     if (isVod) return;
@@ -2295,10 +2327,11 @@ function RadioScreen({ onBack, api }) {
   const [radioError, setRadioError] = useState(null);
   const [radioElapsed, setRadioElapsed] = useState(0);
 
-  // Cleanup audio on unmount
+  // Cleanup audio AND FFmpeg on unmount (prevents radio audio leaking into other sections)
   useEffect(() => {
     return () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
+      if (window.dashPlayer?.ffmpegStop) window.dashPlayer.ffmpegStop().catch(() => {});
     };
   }, []);
 
@@ -4682,13 +4715,18 @@ export default function App() {
     return <ExpiredScreen licenseType={playerLicense.type === 'trial' ? 'trial' : 'yearly'} />;
   }
 
-  const handleNavigate = (section) => setScreen(section);
+  const [pendingPlayItem, setPendingPlayItem] = useState(null);
+  const handleNavigate = (section, playItem) => {
+    if (playItem) setPendingPlayItem(playItem);
+    else setPendingPlayItem(null);
+    setScreen(section);
+  };
 
   switch (screen) {
     case 'live':
-      return <LiveTVScreen onBack={() => setScreen('home')} api={api} />;
+      return <LiveTVScreen onBack={() => setScreen('home')} api={api} autoPlayItem={pendingPlayItem} onConsumeAutoPlay={() => setPendingPlayItem(null)} />;
     case 'vod':
-      return <MediaScreen type="vod" onBack={() => setScreen('home')} api={api} />;
+      return <MediaScreen type="vod" onBack={() => setScreen('home')} api={api} autoPlayItem={pendingPlayItem} onConsumeAutoPlay={() => setPendingPlayItem(null)} />;
     case 'series':
       return <MediaScreen type="series" onBack={() => setScreen('home')} api={api} />;
     case 'radio':
