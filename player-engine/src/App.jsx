@@ -2313,14 +2313,15 @@ function RadioScreen({ onBack, api }) {
 
   const handlePlay = (station) => {
     if (!api) return;
-    // Stop previous audio
+    // Stop previous audio AND FFmpeg process (prevents audio leakage from previous station)
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
+    if (window.dashPlayer?.ffmpegStop) window.dashPlayer.ffmpegStop().catch(() => {});
     setPlaying(station);
     setRadioLoading(true);
     setRadioError(null);
     setPlayingUrl(null);
 
-    // Try radio-specific MP3 URLs first (HTML5 Audio), then fall back to VideoPlayer for .ts streams
+    // Try radio-specific MP3 URLs first (HTML5 Audio), then fall back to FFmpeg
     const urls = api.getRadioUrls(station.stream_id);
     let tried = 0;
     let settled = false;
@@ -2328,45 +2329,62 @@ function RadioScreen({ onBack, api }) {
     const tryUrl = () => {
       if (settled) return;
       if (tried >= urls.length) {
-        // All audio URLs failed - use FFmpeg for radio streams (audio-only output)
+        // All direct audio URLs failed - use FFmpeg radio mode (audio-only MP3 output)
         settled = true;
         const liveUrl = api.getLiveUrl(station.stream_id);
         const isElectron = !!window.dashPlayer?.ffmpegRadioUrl;
         if (isElectron) {
-          // Use FFmpeg radio mode - audio-only AAC output (no video, compatible with Audio element)
-          const radioStreamUrl = liveUrl.replace(/\.\w+$/, '.ts');
-          console.log('[DashPlayer] Using FFmpeg radio for stream:', radioStreamUrl);
-          window.dashPlayer.ffmpegRadioUrl({ url: radioStreamUrl }).then(result => {
-            if (result.success && result.url) {
+          // Try .ts first, then .m3u8 if that fails
+          const tryFFmpegRadio = async (streamUrl) => {
+            console.log('[DashPlayer] Using FFmpeg radio for stream:', streamUrl);
+            const result = await window.dashPlayer.ffmpegRadioUrl({ url: streamUrl });
+            if (!result.success || !result.url) return false;
+
+            return new Promise((resolve) => {
               const audio = new Audio();
               audioRef.current = audio;
-              audio.addEventListener('canplay', () => { station._startTime = Date.now(); setRadioLoading(false); audio.play().catch(() => {}); }, { once: true });
-              audio.addEventListener('error', (e) => {
-                console.log('[DashPlayer] Radio FFmpeg audio error:', e);
-                // Try with .m3u8 as fallback
-                const m3u8Url = liveUrl.replace(/\.\w+$/, '.m3u8');
-                console.log('[DashPlayer] Retrying radio with m3u8:', m3u8Url);
-                window.dashPlayer.ffmpegRadioUrl({ url: m3u8Url }).then(r2 => {
-                  if (r2.success && r2.url) {
-                    const audio2 = new Audio();
-                    audioRef.current = audio2;
-                    audio2.addEventListener('canplay', () => { station._startTime = Date.now(); setRadioLoading(false); audio2.play().catch(() => {}); }, { once: true });
-                    audio2.addEventListener('error', () => { setRadioLoading(false); setRadioError('Stream unavailable'); }, { once: true });
-                    audio2.src = r2.url;
-                    audio2.load();
-                  } else {
-                    setRadioLoading(false);
-                    setRadioError('Stream unavailable');
-                  }
-                });
-              }, { once: true });
+              let resolved = false;
+
+              const succeed = () => {
+                if (resolved) return;
+                resolved = true;
+                station._startTime = Date.now();
+                setRadioLoading(false);
+                setRadioError(null);
+                audio.play().catch(() => {});
+                resolve(true);
+              };
+
+              const fail = () => {
+                if (resolved) return;
+                resolved = true;
+                audio.pause();
+                audio.src = '';
+                resolve(false);
+              };
+
+              audio.addEventListener('canplay', succeed, { once: true });
+              audio.addEventListener('playing', succeed, { once: true });
+              audio.addEventListener('error', fail, { once: true });
+              // 6 second timeout per attempt
+              setTimeout(() => { if (!resolved) fail(); }, 6000);
+
               audio.src = result.url;
               audio.load();
-            } else {
-              setRadioLoading(false);
-              setRadioError('Stream unavailable');
-            }
-          });
+            });
+          };
+
+          // Sequential: try .ts, then .m3u8
+          (async () => {
+            const tsUrl = liveUrl.replace(/\.\w+$/, '.ts');
+            if (await tryFFmpegRadio(tsUrl)) return;
+            // Stop previous FFmpeg before retrying with different URL
+            if (window.dashPlayer?.ffmpegStop) await window.dashPlayer.ffmpegStop().catch(() => {});
+            const m3u8Url = liveUrl.replace(/\.\w+$/, '.m3u8');
+            if (await tryFFmpegRadio(m3u8Url)) return;
+            setRadioLoading(false);
+            setRadioError('Stream unavailable');
+          })();
         } else {
           // Mobile: use HLS for radio
           console.log('[DashPlayer] Using HLS for radio stream');

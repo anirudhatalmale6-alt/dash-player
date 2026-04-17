@@ -97,7 +97,7 @@ function ensureLocalServer() {
       const audioTrack = url.searchParams.get('audio') || '0';
       const mode = url.searchParams.get('mode') || 'transcode';
 
-      /* ── Radio: audio-only AAC output ── */
+      /* ── Radio: audio-only MP3 output ── */
       if (mode === 'radio') {
         console.log(`[FFmpeg] Radio remux:`, sourceUrl);
         stopFfmpeg();
@@ -112,8 +112,8 @@ function ensureLocalServer() {
           '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
           '-i', sourceUrl,
           '-vn',
-          '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
-          '-f', 'adts',
+          '-c:a', 'libmp3lame', '-b:a', '128k', '-ac', '2',
+          '-f', 'mp3',
           'pipe:1',
         ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
@@ -124,7 +124,7 @@ function ensureLocalServer() {
           if (!headersSent) {
             headersSent = true;
             console.log('[FFmpeg] Radio: first data received');
-            safeWriteHead(res, 200, { 'Content-Type': 'audio/aac', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' });
+            safeWriteHead(res, 200, { 'Content-Type': 'audio/mpeg', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' });
           }
           safeWrite(res, chunk);
         });
