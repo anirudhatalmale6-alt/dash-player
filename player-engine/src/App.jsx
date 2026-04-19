@@ -815,6 +815,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const hlsRef = useRef(null); // HLS.js instance for mobile playback
   const mountedRef = useRef(true);
   const generationRef = useRef(0); // increments on each channel change to prevent stale handlers
+  const savedTimeRef = useRef(0); // persisted playback time (survives FFmpeg restarts)
 
   const cleanup = useCallback(() => {
     // Increment generation to invalidate any pending error handlers from previous playback
@@ -843,7 +844,16 @@ function VideoPlayer({ url, onClose, title, inline }) {
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; cleanup(); if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current.load(); } };
+    // Track current playback time so it survives FFmpeg restarts
+    const video = videoRef.current;
+    const onTimeUpdate = () => { if (video && video.currentTime > 0) savedTimeRef.current = video.currentTime; };
+    if (video) video.addEventListener('timeupdate', onTimeUpdate);
+    return () => {
+      mountedRef.current = false;
+      if (video) video.removeEventListener('timeupdate', onTimeUpdate);
+      cleanup();
+      if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; videoRef.current.load(); }
+    };
   }, []);
 
   useEffect(() => {
@@ -851,6 +861,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
     setError(null);
     setLoading(true);
     cleanup();
+    savedTimeRef.current = 0; // reset on new URL/channel
     const video = videoRef.current;
     const isLive = url.includes('/live/') || url.includes('/timeshift/');
     const baseUrl = url.replace(/\.\w+$/, '');
@@ -1060,18 +1071,15 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
-    // Use Electron check instead of usingFfmpeg state (state can be stale)
     const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
     if (isElectron && url) {
-      const currentTime = videoRef.current?.currentTime || 0;
+      // Use savedTimeRef (persisted) instead of videoRef.currentTime (may be 0 after restart)
+      const currentTime = savedTimeRef.current || videoRef.current?.currentTime || 0;
       const isLive = url.includes('/live/') || url.includes('/timeshift/');
       const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
       console.log('[DashPlayer] Switching audio track to', trackId, 'at position', currentTime, 'url:', streamUrl);
-      // Stop current FFmpeg first
       try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
-      // Small delay to ensure FFmpeg process is fully stopped
       await new Promise(r => setTimeout(r, 100));
-      // Restart FFmpeg with different audio track + seek to current position
       const result = await window.dashPlayer.ffmpegTranscodeUrl({
         url: streamUrl, audioTrack: trackId,
         seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
@@ -1146,42 +1154,35 @@ function VideoPlayer({ url, onClose, title, inline }) {
       console.log('[DashPlayer] Loading subtitle track', trackId);
       setCurrentSubText('Loading subtitles...');
 
-      // Subtitles are extracted in the background by the main FFmpeg process
-      // (added when user clicked Tracks button). Just fetch the cached file.
-      const subUrl = url.includes('/live/') ? url.replace(/\.\w+$/, '.ts') : url;
-
-      // Poll for subtitle file readiness (FFmpeg extracts while video plays)
-      let attempts = 0;
-      const maxAttempts = 30; // 30 seconds max wait
-      const pollSubtitle = async () => {
-        while (attempts < maxAttempts) {
-          attempts++;
-          const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
-          if (result.success && result.url) {
-            try {
-              const resp = await fetch(result.url);
-              const vttText = await resp.text();
-              const cues = parseVTT(vttText);
-              if (cues.length > 0) {
-                console.log(`[DashPlayer] Loaded ${cues.length} subtitle cues`);
-                startSubtitleSync(cues);
-                return;
-              }
-            } catch(e) {
-              console.log('[DashPlayer] Subtitle fetch attempt', attempts, 'error:', e.message);
-            }
+      // Extract subtitles in parallel (uses a 2nd connection briefly)
+      // Video continues playing while subtitle file is fetched
+      const subUrl = url;
+      const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
+      if (result.success && result.url) {
+        try {
+          // Use AbortController for 60s timeout - subtitle extraction can be slow
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 60000);
+          const resp = await fetch(result.url, { signal: controller.signal });
+          clearTimeout(timeout);
+          const vttText = await resp.text();
+          const cues = parseVTT(vttText);
+          if (cues.length > 0) {
+            console.log(`[DashPlayer] Loaded ${cues.length} subtitle cues`);
+            startSubtitleSync(cues);
+          } else {
+            setCurrentSubText('No subtitle data in this track');
+            setTimeout(() => setCurrentSubText(''), 3000);
           }
-          // Wait 1 second before retrying (file may still be growing)
-          if (attempts < maxAttempts) {
-            console.log(`[DashPlayer] Subtitle not ready yet, attempt ${attempts}/${maxAttempts}`);
-            await new Promise(r => setTimeout(r, 1000));
-          }
+        } catch(e) {
+          console.log('[DashPlayer] Subtitle fetch error:', e.message);
+          setCurrentSubText(e.name === 'AbortError' ? 'Subtitle loading timed out' : 'Subtitle extraction failed');
+          setTimeout(() => setCurrentSubText(''), 3000);
         }
-        console.log('[DashPlayer] Subtitle extraction timed out');
-        setCurrentSubText('Subtitles not available for this content');
+      } else {
+        setCurrentSubText('Subtitles not available');
         setTimeout(() => setCurrentSubText(''), 3000);
-      };
-      pollSubtitle();
+      }
     }
   };
 
@@ -1227,29 +1228,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
         }
       }
       probedRef.current = true;
-
-      // If subtitles found, restart FFmpeg with embedded subtitle extraction
-      // This extracts subtitles within the SAME FFmpeg process (single IPTV connection)
-      if (foundSubTracks.length > 0 && window.dashPlayer?.ffmpegTranscodeUrl) {
-        const currentTime = videoRef.current?.currentTime || 0;
-        const streamUrl = url;
-        const subIndices = foundSubTracks.map(t => t.index);
-        console.log('[DashPlayer] Restarting FFmpeg with subtitle extraction for tracks:', subIndices);
-        try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
-        await new Promise(r => setTimeout(r, 200));
-        const result = await window.dashPlayer.ffmpegTranscodeUrl({
-          url: streamUrl,
-          audioTrack: selectedAudio || 0,
-          seek: currentTime > 1 ? Math.floor(currentTime) : undefined,
-          subtitleTracks: subIndices,
-        });
-        if (result.success && result.url && videoRef.current) {
-          setUsingFfmpeg(true);
-          videoRef.current.src = result.url;
-          videoRef.current.load();
-          videoRef.current.play().catch(() => {});
-        }
-      }
+      // Tracks are now shown in UI - user can select audio/subtitle from the menu
+      // No FFmpeg restart here - subtitles will be extracted on-demand when user selects one
     } catch (e) {
       console.log('[DashPlayer] Probe error:', e);
     }
