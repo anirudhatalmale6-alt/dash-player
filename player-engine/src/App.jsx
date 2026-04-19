@@ -1930,7 +1930,7 @@ function MediaScreen({ type, onBack, api, autoPlayItem, onConsumeAutoPlay }) {
                   <button className="back-btn" onClick={() => setPlayingItem(null)}>&#9632; Stop</button>
                 </div>
               </div>
-              <div className="live-player-video">
+              <div className="live-player-video" style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
                 <VideoPlayer
                   key={playingItem.stream_id}
                   url={api.getSeriesUrl(playingItem.stream_id, playingItem.container_extension || 'mp4')}
@@ -1940,7 +1940,7 @@ function MediaScreen({ type, onBack, api, autoPlayItem, onConsumeAutoPlay }) {
                 />
               </div>
               {/* Season tabs at bottom of player */}
-              <div style={{ display: 'flex', gap: 6, padding: '8px 12px', background: 'var(--card-bg)', borderTop: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 6, padding: '8px 12px', background: 'var(--card-bg)', borderTop: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0, zIndex: 10 }}>
                 {seasons.map(season => (
                   <button key={season} className={`season-tab ${(currentSeason === season) ? 'active' : ''}`}
                     onClick={() => { setActiveSeason(season); setEpPage(0); }}
