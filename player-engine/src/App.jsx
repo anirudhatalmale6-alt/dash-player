@@ -1156,19 +1156,32 @@ function VideoPlayer({ url, onClose, title, inline }) {
     const isElectron = !!window.dashPlayer?.ffmpegSubtitleUrl;
     if (trackId >= 0 && isElectron && url) {
       console.log('[DashPlayer] Loading subtitle track', trackId);
-      setCurrentSubText('Loading subtitles...');
+      setCurrentSubText('Extracting subtitles...');
 
-      // Extract subtitles in parallel (uses a 2nd connection briefly)
-      // Video continues playing while subtitle file is fetched
       const subUrl = url;
+      const streamUrl = url;
+
+      // IPTV allows only 1 connection - must stop video to extract subtitles
+      const currentTime = savedTimeRef.current || videoRef.current?.currentTime || 0;
+      console.log('[DashPlayer] Stopping video to extract subtitles, position:', currentTime);
+
+      // Step 1: Stop video FFmpeg (frees the 1 IPTV connection)
+      try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
+      if (videoRef.current) {
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
+      }
+      await new Promise(r => setTimeout(r, 500));
+
+      // Step 2: Extract subtitle using the freed connection
+      let subtitleLoaded = false;
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
       if (result.success && result.url) {
         try {
-          // Use AbortController so audio changes can cancel this
           if (subAbortRef.current) subAbortRef.current.abort();
           const controller = new AbortController();
           subAbortRef.current = controller;
-          const timeout = setTimeout(() => controller.abort(), 60000);
+          const timeout = setTimeout(() => controller.abort(), 90000);
           const resp = await fetch(result.url, { signal: controller.signal });
           clearTimeout(timeout);
           subAbortRef.current = null;
@@ -1177,6 +1190,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           if (cues.length > 0) {
             console.log(`[DashPlayer] Loaded ${cues.length} subtitle cues`);
             startSubtitleSync(cues);
+            subtitleLoaded = true;
           } else {
             setCurrentSubText('No subtitle data in this track');
             setTimeout(() => setCurrentSubText(''), 3000);
@@ -1189,6 +1203,20 @@ function VideoPlayer({ url, onClose, title, inline }) {
       } else {
         setCurrentSubText('Subtitles not available');
         setTimeout(() => setCurrentSubText(''), 3000);
+      }
+
+      // Step 3: Restart video at saved position (subtitle extraction is done, connection freed)
+      await new Promise(r => setTimeout(r, 300));
+      const restartResult = await window.dashPlayer.ffmpegTranscodeUrl({
+        url: streamUrl,
+        audioTrack: selectedAudio || 0,
+        seek: currentTime > 1 ? Math.floor(currentTime) : undefined,
+      });
+      if (restartResult.success && restartResult.url && videoRef.current) {
+        setUsingFfmpeg(true);
+        videoRef.current.src = restartResult.url;
+        videoRef.current.load();
+        videoRef.current.play().catch(() => {});
       }
     }
   };

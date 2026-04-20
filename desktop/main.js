@@ -265,20 +265,11 @@ function ensureLocalServer() {
 
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
 
-      // Dual seek for VOD: input seek to (time-15s) for speed, output seek 15s for accuracy
-      // This prevents audio/video desync when switching audio tracks
-      let inputSeekArgs = [];
+      // Output-only seek for VOD: -ss AFTER -i ensures it works with IPTV streams
+      // that don't support HTTP byte-range requests (input seek before -i is unreliable)
       let outputSeekArgs = [];
       if (!isLive && seekTime > 0) {
-        if (seekTime > 20) {
-          // Dual seek: fast input seek + precise output seek
-          const inputSeek = Math.max(0, seekTime - 15);
-          inputSeekArgs = ['-ss', String(inputSeek)];
-          outputSeekArgs = ['-ss', String(seekTime - inputSeek)];
-        } else {
-          // Short seek: just input seek is fine
-          inputSeekArgs = ['-ss', String(seekTime)];
-        }
+        outputSeekArgs = ['-ss', String(seekTime)];
       }
 
       // Build reconnect args for live streams (placed before -i, after other input options)
@@ -295,7 +286,6 @@ function ensureLocalServer() {
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
-        ...inputSeekArgs,
         '-probesize', isLive ? '1000000' : '5000000',
         '-analyzeduration', isLive ? '1000000' : '5000000',
         ...reconnectArgs,
