@@ -271,6 +271,12 @@ function ensureLocalServer() {
         ? ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '3']
         : [];
 
+      // Live: pure remux (copy both video+audio, no transcoding)
+      // VOD: copy video, transcode audio to AAC (needed for audio track switching)
+      const audioArgs = isLive
+        ? ['-c:a', 'copy']
+        : ['-c:a', 'aac', '-b:a', '192k', '-async', '1'];
+
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
@@ -283,9 +289,7 @@ function ensureLocalServer() {
         '-map', '0:v:0?',
         '-map', `0:a:${audioTrack}?`,
         '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-b:a', '192k',
-        '-async', '1',
+        ...audioArgs,
         '-f', 'mp4',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1',
