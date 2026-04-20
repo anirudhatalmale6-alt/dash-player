@@ -265,11 +265,11 @@ function ensureLocalServer() {
 
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
 
-      // Output-only seek for VOD: -ss AFTER -i ensures it works with IPTV streams
-      // that don't support HTTP byte-range requests (input seek before -i is unreliable)
-      let outputSeekArgs = [];
+      // Input seek for VOD: -ss BEFORE -i is fast (skips packets without decoding)
+      // With -c:v copy, FFmpeg jumps to nearest keyframe - very fast even on HTTP streams
+      let inputSeekArgs = [];
       if (!isLive && seekTime > 0) {
-        outputSeekArgs = ['-ss', String(seekTime)];
+        inputSeekArgs = ['-ss', String(seekTime)];
       }
 
       // Build reconnect args for live streams (placed before -i, after other input options)
@@ -281,16 +281,16 @@ function ensureLocalServer() {
       // VOD: copy video, transcode audio to AAC (needed for audio track switching)
       const audioArgs = isLive
         ? ['-c:a', 'copy']
-        : ['-c:a', 'aac', '-b:a', '192k', '-async', '1'];
+        : ['-c:a', 'aac', '-b:a', '192k'];
 
       const args = [
         '-hide_banner', '-loglevel', 'info',
         '-user_agent', userAgent,
+        ...inputSeekArgs,
         '-probesize', isLive ? '1000000' : '5000000',
         '-analyzeduration', isLive ? '1000000' : '5000000',
         ...reconnectArgs,
         '-i', sourceUrl,
-        ...outputSeekArgs,
         '-map', '0:v:0?',
         '-map', `0:a:${audioTrack}?`,
         '-c:v', 'copy',

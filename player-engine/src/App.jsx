@@ -979,6 +979,10 @@ function VideoPlayer({ url, onClose, title, inline }) {
         setLoading(false);
         return;
       }
+      // Brief delay to let IPTV server release previous connection
+      const preGen = generationRef.current;
+      await new Promise(r => setTimeout(r, 500));
+      if (preGen !== generationRef.current) return; // channel changed during delay
       // Capture current generation - if it changes, this playback session is stale
       const myGen = generationRef.current;
       console.log('[DashPlayer] FFmpeg playing:', streamUrl, 'gen:', myGen);
@@ -1083,7 +1087,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
       const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
       console.log('[DashPlayer] Switching audio track to', trackId, 'at position', currentTime, 'url:', streamUrl);
       try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
-      await new Promise(r => setTimeout(r, 300));
+      // Wait for IPTV server to fully release the connection before reconnecting
+      await new Promise(r => setTimeout(r, 1000));
       const result = await window.dashPlayer.ffmpegTranscodeUrl({
         url: streamUrl, audioTrack: trackId,
         seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
