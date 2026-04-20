@@ -816,6 +816,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const mountedRef = useRef(true);
   const generationRef = useRef(0); // increments on each channel change to prevent stale handlers
   const savedTimeRef = useRef(0); // persisted playback time (survives FFmpeg restarts)
+  const subAbortRef = useRef(null); // AbortController for pending subtitle fetch
 
   const cleanup = useCallback(() => {
     // Increment generation to invalidate any pending error handlers from previous playback
@@ -1071,6 +1072,9 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
+    // Cancel any pending subtitle extraction (it uses a 2nd IPTV connection)
+    if (subAbortRef.current) { subAbortRef.current.abort(); subAbortRef.current = null; }
+    setCurrentSubText('');
     const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
     if (isElectron && url) {
       // Use savedTimeRef (persisted) instead of videoRef.currentTime (may be 0 after restart)
@@ -1079,7 +1083,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
       console.log('[DashPlayer] Switching audio track to', trackId, 'at position', currentTime, 'url:', streamUrl);
       try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 300));
       const result = await window.dashPlayer.ffmpegTranscodeUrl({
         url: streamUrl, audioTrack: trackId,
         seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
@@ -1160,11 +1164,14 @@ function VideoPlayer({ url, onClose, title, inline }) {
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
       if (result.success && result.url) {
         try {
-          // Use AbortController for 60s timeout - subtitle extraction can be slow
+          // Use AbortController so audio changes can cancel this
+          if (subAbortRef.current) subAbortRef.current.abort();
           const controller = new AbortController();
+          subAbortRef.current = controller;
           const timeout = setTimeout(() => controller.abort(), 60000);
           const resp = await fetch(result.url, { signal: controller.signal });
           clearTimeout(timeout);
+          subAbortRef.current = null;
           const vttText = await resp.text();
           const cues = parseVTT(vttText);
           if (cues.length > 0) {

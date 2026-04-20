@@ -23,6 +23,7 @@ const subtitleCache = new Map(); // url+index -> { path, ready }
 // Pending subtitle tracks to embed in next transcode (set by IPC, consumed by server)
 let pendingSubtitleTracks = null;
 let activeSubtitleFiles = {}; // track index -> temp file path
+let activeSubtitleProcess = null; // separate FFmpeg process for subtitle extraction
 
 function findBinary(name) {
   const ext = process.platform === 'win32' ? '.exe' : '';
@@ -80,6 +81,13 @@ function stopFfmpeg() {
         }
       } catch(e) {}
     }, 300);
+  }
+  // Also kill any running subtitle extraction process (frees the IPTV connection)
+  if (activeSubtitleProcess) {
+    const subProc = activeSubtitleProcess;
+    activeSubtitleProcess = null;
+    console.log('[FFmpeg] Stopping subtitle extraction process');
+    try { subProc.kill('SIGKILL'); } catch(e) {}
   }
   if (currentTranscodeResponse) {
     safeEnd(currentTranscodeResponse);
@@ -175,6 +183,11 @@ function ensureLocalServer() {
         const subIndex = url.searchParams.get('subIndex') || '0';
         const cacheKey = `${sourceUrl}::${subIndex}`;
         console.log(`[FFmpeg] Extracting subtitle track ${subIndex} from:`, sourceUrl);
+        // Kill any previous subtitle extraction
+        if (activeSubtitleProcess) {
+          try { activeSubtitleProcess.kill('SIGKILL'); } catch(e) {}
+          activeSubtitleProcess = null;
+        }
         const subUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dash-player/1.0.0 Chrome/120.0.6099.291 Electron/28.3.3 Safari/537.36';
         const proc = spawn(ffmpegPath, [
           '-hide_banner', '-loglevel', 'info',
@@ -188,6 +201,7 @@ function ensureLocalServer() {
           '-f', 'webvtt',
           'pipe:1',
         ], { stdio: ['pipe', 'pipe', 'pipe'] });
+        activeSubtitleProcess = proc;
 
         const subTimeout = setTimeout(() => {
           if (!hasData) {
@@ -217,6 +231,7 @@ function ensureLocalServer() {
         });
         proc.on('exit', (code) => {
           clearTimeout(subTimeout);
+          if (activeSubtitleProcess === proc) activeSubtitleProcess = null;
           if (!hasData) {
             console.log('[FFmpeg sub] No data produced. Code:', code, 'stderr:', stderrLog.slice(-500));
             safeWriteHead(res, 200, { 'Content-Type': 'text/vtt', 'Access-Control-Allow-Origin': '*' });
