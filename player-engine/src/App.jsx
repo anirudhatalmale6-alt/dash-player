@@ -1433,7 +1433,17 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
 
         {/* Loading / Error */}
         {loadingStats && <div style={{ textAlign: 'center', padding: '10px 20px', color: '#7c3aed', fontSize: 14 }}>Loading content...</div>}
-        {statsError && <div style={{ textAlign: 'center', padding: '10px 20px', color: '#ef4444', fontSize: 13, background: 'rgba(239,68,68,0.08)', borderRadius: 8, margin: '0 20px 10px' }}>{statsError}</div>}
+        {statsError && (
+          <div style={{ textAlign: 'center', padding: '14px 20px', color: '#ef4444', fontSize: 13, background: 'rgba(239,68,68,0.08)', borderRadius: 8, margin: '0 20px 10px' }}>
+            <div>{statsError}</div>
+            {statsError.toLowerCase().includes('auth') && (
+              <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 12 }}>
+                <div>MAC Address: <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{device.mac}</span></div>
+                <div style={{ marginTop: 4 }}>Server: <span style={{ color: '#e2e8f0' }}>{credentials?.url || 'N/A'}</span> | User: <span style={{ color: '#e2e8f0' }}>{credentials?.username || 'N/A'}</span></div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quick Stats */}
         <div className="home-stats">
@@ -4528,6 +4538,7 @@ export default function App() {
   const [contentStats, setContentStats] = useState({ live: 0, vod: 0, series: 0, radio: 0 });
   const [loadingStats, setLoadingStats] = useState(false);
   const [statsError, setStatsError] = useState('');
+  const [pendingPlayItem, setPendingPlayItem] = useState(null);
 
   useEffect(() => {
     if (credentials && credentials.url && credentials.username && credentials.password) {
@@ -4592,13 +4603,18 @@ export default function App() {
         const authTest = await api.authenticate();
         console.log('[DashPlayer] Auth test result:', authTest ? 'OK' : 'FAILED', authTest?.user_info ? 'user_info present' : 'no user_info');
         if (!authTest || !authTest.user_info) {
-          setStatsError('Authentication failed - check server URL, username, and password');
+          setStatsError('Authentication failed - subscription may be expired or credentials are incorrect');
           setLoadingStats(false);
           return;
         }
       } catch (authErr) {
         console.error('[DashPlayer] Auth test error:', authErr);
-        setStatsError('Cannot connect to server: ' + (authErr.message || 'unknown error'));
+        const status = authErr?.response?.status;
+        if (status === 403) {
+          setStatsError('Authentication failed - subscription expired or access denied (403)');
+        } else {
+          setStatsError('Cannot connect to server: ' + (authErr.message || 'unknown error'));
+        }
         setLoadingStats(false);
         return;
       }
@@ -4706,7 +4722,6 @@ export default function App() {
     return <ExpiredScreen licenseType={playerLicense.type === 'trial' ? 'trial' : 'yearly'} />;
   }
 
-  const [pendingPlayItem, setPendingPlayItem] = useState(null);
   const handleNavigate = (section, playItem) => {
     if (playItem) setPendingPlayItem(playItem);
     else setPendingPlayItem(null);
