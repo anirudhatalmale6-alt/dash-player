@@ -979,10 +979,6 @@ function VideoPlayer({ url, onClose, title, inline }) {
         setLoading(false);
         return;
       }
-      // Brief delay to let IPTV server release previous connection
-      const preGen = generationRef.current;
-      await new Promise(r => setTimeout(r, 500));
-      if (preGen !== generationRef.current) return; // channel changed during delay
       // Capture current generation - if it changes, this playback session is stale
       const myGen = generationRef.current;
       console.log('[DashPlayer] FFmpeg playing:', streamUrl, 'gen:', myGen);
@@ -1087,8 +1083,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
       const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
       console.log('[DashPlayer] Switching audio track to', trackId, 'at position', currentTime, 'url:', streamUrl);
       try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
-      // Wait for IPTV server to fully release the connection before reconnecting
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 100));
       const result = await window.dashPlayer.ffmpegTranscodeUrl({
         url: streamUrl, audioTrack: trackId,
         seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
@@ -1106,15 +1101,19 @@ function VideoPlayer({ url, onClose, title, inline }) {
   // Parse WebVTT text into array of {start, end, text} cues
   const parseVTT = (vttText) => {
     const cues = [];
+    // Support both HH:MM:SS.mmm and MM:SS.mmm formats
+    const timePattern = /(\d{1,2}:?\d{2}:\d{2}[.,]\d{2,3})\s*-->\s*(\d{1,2}:?\d{2}:\d{2}[.,]\d{2,3})/;
     const blocks = vttText.split(/\n\s*\n/);
     for (const block of blocks) {
       const lines = block.trim().split('\n');
       for (let i = 0; i < lines.length; i++) {
-        const timeMatch = lines[i].match(/(\d{2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[.,]\d{3})/);
+        const timeMatch = lines[i].match(timePattern);
         if (timeMatch) {
           const parseTime = (t) => {
             const p = t.replace(',', '.').split(':');
-            return parseFloat(p[0]) * 3600 + parseFloat(p[1]) * 60 + parseFloat(p[2]);
+            if (p.length === 3) return parseFloat(p[0]) * 3600 + parseFloat(p[1]) * 60 + parseFloat(p[2]);
+            if (p.length === 2) return parseFloat(p[0]) * 60 + parseFloat(p[1]);
+            return parseFloat(p[0]);
           };
           const text = lines.slice(i + 1).join('\n').replace(/<[^>]+>/g, '').trim();
           if (text) {
@@ -1124,7 +1123,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
         }
       }
     }
-    console.log(`[DashPlayer] Parsed ${cues.length} subtitle cues`);
+    console.log(`[DashPlayer] Parsed ${cues.length} subtitle cues from ${vttText.length} bytes`);
     return cues;
   };
 
@@ -1161,42 +1160,28 @@ function VideoPlayer({ url, onClose, title, inline }) {
     const isElectron = !!window.dashPlayer?.ffmpegSubtitleUrl;
     if (trackId >= 0 && isElectron && url) {
       console.log('[DashPlayer] Loading subtitle track', trackId);
-      setCurrentSubText('Extracting subtitles...');
+      setCurrentSubText('Loading subtitles...');
 
+      // Extract subtitles in parallel - video keeps playing (no connection limit issue)
       const subUrl = url;
-      const streamUrl = url;
-
-      // IPTV allows only 1 connection - must stop video to extract subtitles
-      const currentTime = savedTimeRef.current || videoRef.current?.currentTime || 0;
-      console.log('[DashPlayer] Stopping video to extract subtitles, position:', currentTime);
-
-      // Step 1: Stop video FFmpeg (frees the 1 IPTV connection)
-      try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
-      if (videoRef.current) {
-        videoRef.current.removeAttribute('src');
-        videoRef.current.load();
-      }
-      await new Promise(r => setTimeout(r, 500));
-
-      // Step 2: Extract subtitle using the freed connection
-      let subtitleLoaded = false;
       const result = await window.dashPlayer.ffmpegSubtitleUrl({ url: subUrl, subIndex: trackId });
       if (result.success && result.url) {
         try {
           if (subAbortRef.current) subAbortRef.current.abort();
           const controller = new AbortController();
           subAbortRef.current = controller;
-          const timeout = setTimeout(() => controller.abort(), 90000);
+          const timeout = setTimeout(() => controller.abort(), 120000);
           const resp = await fetch(result.url, { signal: controller.signal });
           clearTimeout(timeout);
           subAbortRef.current = null;
           const vttText = await resp.text();
+          console.log('[DashPlayer] Subtitle VTT length:', vttText.length, 'first 200 chars:', vttText.substring(0, 200));
           const cues = parseVTT(vttText);
           if (cues.length > 0) {
             console.log(`[DashPlayer] Loaded ${cues.length} subtitle cues`);
             startSubtitleSync(cues);
-            subtitleLoaded = true;
           } else {
+            console.log('[DashPlayer] No cues found in VTT data');
             setCurrentSubText('No subtitle data in this track');
             setTimeout(() => setCurrentSubText(''), 3000);
           }
@@ -1208,20 +1193,6 @@ function VideoPlayer({ url, onClose, title, inline }) {
       } else {
         setCurrentSubText('Subtitles not available');
         setTimeout(() => setCurrentSubText(''), 3000);
-      }
-
-      // Step 3: Restart video at saved position (subtitle extraction is done, connection freed)
-      await new Promise(r => setTimeout(r, 300));
-      const restartResult = await window.dashPlayer.ffmpegTranscodeUrl({
-        url: streamUrl,
-        audioTrack: selectedAudio || 0,
-        seek: currentTime > 1 ? Math.floor(currentTime) : undefined,
-      });
-      if (restartResult.success && restartResult.url && videoRef.current) {
-        setUsingFfmpeg(true);
-        videoRef.current.src = restartResult.url;
-        videoRef.current.load();
-        videoRef.current.play().catch(() => {});
       }
     }
   };
