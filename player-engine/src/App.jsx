@@ -1385,7 +1385,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
 }
 
 /* ══════ HOME SCREEN (Interactive) ══════ */
-function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, loadingStats, statsError }) {
+function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, loadingStats, statsError, authFailed }) {
   const [time, setTime] = useState(new Date());
   const [device] = useState(() => getDeviceIdentity());
   const history = getWatchHistory();
@@ -1403,6 +1403,13 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
     if (h < 18) return t('greeting_afternoon');
     return t('greeting_evening');
   };
+  // Content sections blocked when auth failed (expired subscription)
+  const contentSections = new Set(['live', 'vod', 'series', 'radio', 'catchup', 'favorites', 'epg', 'multiscreen', 'search']);
+  const safeNavigate = (section, playItem) => {
+    if (authFailed && contentSections.has(section)) return;
+    onNavigate(section, playItem);
+  };
+  const dimStyle = authFailed ? { opacity: 0.4, pointerEvents: 'none' } : {};
 
   return (
     <div className="home-screen">
@@ -1416,8 +1423,8 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
           <div className="home-clock-date">{formatDate(time)}</div>
         </div>
         <div className="home-topbar-actions">
-          <button className="home-search-btn" onClick={() => onNavigate('search')}>&#128269; {t('search')}</button>
-          <button className="home-notification-btn" onClick={() => onNavigate('multiscreen')} title="Multi Screen">
+          <button className="home-search-btn" onClick={() => safeNavigate('search')}>&#128269; {t('search')}</button>
+          <button className="home-notification-btn" onClick={() => safeNavigate('multiscreen')} title="Multi Screen">
             &#9638;
             <div className="home-notification-dot" style={{display:'none'}} />
           </button>
@@ -1437,32 +1444,32 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
           <div style={{ textAlign: 'center', padding: '14px 20px', color: '#ef4444', fontSize: 13, background: 'rgba(239,68,68,0.08)', borderRadius: 8, margin: '0 20px 10px' }}>
             <div>{statsError}</div>
             {statsError.toLowerCase().includes('auth') && (
-              <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 12 }}>
+              <div style={{ marginTop: 10, color: '#94a3b8', fontSize: 12 }}>
                 <div>MAC Address: <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{device.mac}</span></div>
-                <div style={{ marginTop: 4 }}>Server: <span style={{ color: '#e2e8f0' }}>{credentials?.url || 'N/A'}</span> | User: <span style={{ color: '#e2e8f0' }}>{credentials?.username || 'N/A'}</span></div>
+                <div style={{ marginTop: 4 }}>Device Key: <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{device.key}</span></div>
               </div>
             )}
           </div>
         )}
 
         {/* Quick Stats */}
-        <div className="home-stats">
-          <div className="home-stat" onClick={() => onNavigate('live')}>
+        <div className="home-stats" style={dimStyle}>
+          <div className="home-stat" onClick={() => safeNavigate('live')}>
             <div className="home-stat-icon">&#128250;</div>
             <div className="home-stat-value">{contentStats.live || 0}</div>
             <div className="home-stat-label">{t('live_channels')}</div>
           </div>
-          <div className="home-stat" onClick={() => onNavigate('vod')}>
+          <div className="home-stat" onClick={() => safeNavigate('vod')}>
             <div className="home-stat-icon">&#127910;</div>
             <div className="home-stat-value">{contentStats.vod || 0}</div>
             <div className="home-stat-label">{t('movies').toUpperCase()}</div>
           </div>
-          <div className="home-stat" onClick={() => onNavigate('series')}>
+          <div className="home-stat" onClick={() => safeNavigate('series')}>
             <div className="home-stat-icon">&#127916;</div>
             <div className="home-stat-value">{contentStats.series || 0}</div>
             <div className="home-stat-label">{t('series').toUpperCase()}</div>
           </div>
-          <div className="home-stat" onClick={() => onNavigate('favorites')}>
+          <div className="home-stat" onClick={() => safeNavigate('favorites')}>
             <div className="home-stat-icon">&#9733;</div>
             <div className="home-stat-value">{getFavorites('live').length + getFavorites('vod').length + getFavorites('series').length}</div>
             <div className="home-stat-label">{t('favorites').toUpperCase()}</div>
@@ -1470,23 +1477,23 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
         </div>
 
         {/* Main Cards */}
-        <div className="home-cards-main">
-          <div className="home-card home-card-live" onClick={() => onNavigate('live')}>
+        <div className="home-cards-main" style={dimStyle}>
+          <div className="home-card home-card-live" onClick={() => safeNavigate('live')}>
             <div className="home-card-icon">&#128250;</div>
             <div className="home-card-label">{t('live_tv')}</div>
             <div className="home-card-count">{contentStats.live || 0} {t('channels')}</div>
           </div>
-          <div className="home-card home-card-movies" onClick={() => onNavigate('vod')}>
+          <div className="home-card home-card-movies" onClick={() => safeNavigate('vod')}>
             <div className="home-card-icon">&#127910;</div>
             <div className="home-card-label">{t('movies')}</div>
             <div className="home-card-count">{contentStats.vod || 0} {t('titles')}</div>
           </div>
-          <div className="home-card home-card-series" onClick={() => onNavigate('series')}>
+          <div className="home-card home-card-series" onClick={() => safeNavigate('series')}>
             <div className="home-card-icon">&#127916;</div>
             <div className="home-card-label">{t('series')}</div>
             <div className="home-card-count">{contentStats.series || 0} {t('shows')}</div>
           </div>
-          <div className="home-card home-card-radio" onClick={() => onNavigate('radio')}>
+          <div className="home-card home-card-radio" onClick={() => safeNavigate('radio')}>
             <div className="home-card-icon">&#127911;</div>
             <div className="home-card-label">{t('radio')}</div>
             <div className="home-card-count">{contentStats.radio || 0} {t('stations')}</div>
@@ -1495,45 +1502,45 @@ function HomeScreen({ onNavigate, credentials, playerLicense, contentStats, load
 
         {/* Secondary Cards */}
         <div className="home-cards-secondary">
-          <div className="home-card-sm" onClick={() => onNavigate('catchup')}>
+          <div className="home-card-sm" style={dimStyle} onClick={() => safeNavigate('catchup')}>
             <span className="home-card-sm-icon">&#9202;</span>
             <span>{t('catch_up')}</span>
           </div>
-          <div className="home-card-sm" onClick={() => onNavigate('favorites')}>
+          <div className="home-card-sm" style={dimStyle} onClick={() => safeNavigate('favorites')}>
             <span className="home-card-sm-icon">&#9733;</span>
             <span>{t('favorites')}</span>
           </div>
-          <div className="home-card-sm" onClick={() => onNavigate('epg')}>
+          <div className="home-card-sm" style={dimStyle} onClick={() => safeNavigate('epg')}>
             <span className="home-card-sm-icon">&#128203;</span>
             <span>{t('tv_guide')}</span>
           </div>
-          <div className="home-card-sm" onClick={() => onNavigate('multiscreen')}>
+          <div className="home-card-sm" style={dimStyle} onClick={() => safeNavigate('multiscreen')}>
             <span className="home-card-sm-icon">&#9638;</span>
             <span>{t('multi_screen')}</span>
           </div>
-          <div className="home-card-sm" onClick={() => onNavigate('playlists')}>
+          <div className="home-card-sm" onClick={() => safeNavigate('playlists')}>
             <span className="home-card-sm-icon">&#128220;</span>
             <span>{t('playlists')}</span>
           </div>
-          <div className="home-card-sm" onClick={() => onNavigate('speedtest')}>
+          <div className="home-card-sm" onClick={() => safeNavigate('speedtest')}>
             <span className="home-card-sm-icon">&#128246;</span>
             <span>{t('speed_test')}</span>
           </div>
-          <div className="home-card-sm" onClick={() => onNavigate('settings')}>
+          <div className="home-card-sm" onClick={() => safeNavigate('settings')}>
             <span className="home-card-sm-icon">&#9881;</span>
             <span>{t('settings')}</span>
           </div>
         </div>
 
         {/* Recently Watched */}
-        {history.length > 0 && (
+        {history.length > 0 && !authFailed && (
           <div className="home-recently">
             <div className="home-section-title">{t('recently_watched')}</div>
             <div className="home-recently-scroll">
               {history.slice(0, 12).map(item => (
                 <div key={item.id} className="home-recently-card" onClick={() => {
                   const section = item.type === 'live' ? 'live' : item.type === 'vod' ? 'vod' : 'series';
-                  onNavigate(section, item);
+                  safeNavigate(section, item);
                 }}>
                   <div className="home-recently-poster" style={item.icon ? { backgroundImage: `url(${item.icon})` } : {}}>
                     {!item.icon && (item.type === 'live' ? '\u{1F4FA}' : item.type === 'vod' ? '\u{1F3AC}' : '\u{1F3A5}')}
@@ -4539,6 +4546,7 @@ export default function App() {
   const [loadingStats, setLoadingStats] = useState(false);
   const [statsError, setStatsError] = useState('');
   const [pendingPlayItem, setPendingPlayItem] = useState(null);
+  const [authFailed, setAuthFailed] = useState(false);
 
   useEffect(() => {
     if (credentials && credentials.url && credentials.username && credentials.password) {
@@ -4598,12 +4606,14 @@ export default function App() {
       console.log('[DashPlayer] Fetching content stats...');
       setLoadingStats(true);
       setStatsError('');
+      setAuthFailed(false);
       // First test authentication
       try {
         const authTest = await api.authenticate();
         console.log('[DashPlayer] Auth test result:', authTest ? 'OK' : 'FAILED', authTest?.user_info ? 'user_info present' : 'no user_info');
         if (!authTest || !authTest.user_info) {
           setStatsError('Authentication failed - subscription may be expired or credentials are incorrect');
+          setAuthFailed(true);
           setLoadingStats(false);
           return;
         }
@@ -4615,6 +4625,7 @@ export default function App() {
         } else {
           setStatsError('Cannot connect to server: ' + (authErr.message || 'unknown error'));
         }
+        setAuthFailed(true);
         setLoadingStats(false);
         return;
       }
@@ -4754,6 +4765,6 @@ export default function App() {
     case 'playlists':
       return <PlaylistsScreen onBack={() => setScreen('home')} onSwitch={handleSwitchPlaylist} activePlaylist={credentials} />;
     default:
-      return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} contentStats={contentStats} loadingStats={loadingStats} statsError={statsError} />;
+      return <HomeScreen onNavigate={handleNavigate} credentials={credentials} playerLicense={playerLicense} contentStats={contentStats} loadingStats={loadingStats} statsError={statsError} authFailed={authFailed} />;
   }
 }
