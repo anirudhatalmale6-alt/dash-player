@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('dashPlayer', {
   platform: process.platform,
-  version: '3.3.4',
+  version: '3.3.5',
   isElectron: true,
   setProxy: (config) => ipcRenderer.invoke('set-proxy', config),
   clearProxy: () => ipcRenderer.invoke('clear-proxy'),

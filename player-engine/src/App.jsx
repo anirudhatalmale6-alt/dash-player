@@ -4510,7 +4510,12 @@ async function fetchPlayerLicense() {
       const daysLeft = expires ? Math.ceil((expires - new Date()) / (1000*60*60*24)) : 365;
       return { type: daysLeft > 0 ? 'yearly' : 'expired', expiresAt: d.license_expires_at, trialDaysLeft: 0, default_language: defaultLang };
     }
-    // Trial
+    // Trial - use license_expires_at if admin has set/extended it
+    if (d.license_expires_at) {
+      const expires = new Date(d.license_expires_at);
+      const daysLeft = Math.ceil((expires - new Date()) / (1000*60*60*24));
+      return { type: daysLeft > 0 ? 'trial' : 'expired', expiresAt: d.license_expires_at, trialDaysLeft: Math.max(0, daysLeft), default_language: defaultLang };
+    }
     const created = new Date(d.created_at);
     const daysSinceCreated = Math.floor((new Date() - created) / (1000*60*60*24));
     const trialDays = 7;
