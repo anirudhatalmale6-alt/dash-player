@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, session, ipcMain, screen, shell } = require('electron');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
 const http = require('http');
@@ -424,6 +424,23 @@ function createWindow() {
   });
 
   win.on('closed', () => { stopFfmpeg(); mainWindow = null; });
+
+  // Open external links (dashplayer.eu, etc.) in system browser instead of inside Electron
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    const appUrl = `file://${path.join(__dirname, 'app', 'index.html')}`;
+    if (!url.startsWith('file://')) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
   return win;
 }
 

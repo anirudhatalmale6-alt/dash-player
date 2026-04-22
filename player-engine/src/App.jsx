@@ -903,9 +903,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
 
     // Detect platform: Electron (desktop) uses FFmpeg, mobile uses direct playback
     const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
-    const streamUrl = isLive
-      ? (isElectron ? baseUrl + '.ts' : baseUrl + '.m3u8')
-      : url;
+    // Use the URL as-is (getLiveUrl already uses the correct format from playlist config)
+    const streamUrl = url;
 
     // Mobile/web: use HLS.js for .m3u8 streams (Android WebView doesn't support HLS natively)
     if (!isElectron) {
@@ -1072,20 +1071,19 @@ function VideoPlayer({ url, onClose, title, inline }) {
   const handleAudioChange = async (trackId) => {
     setSelectedAudio(trackId);
     setShowTrackMenu(null);
-    // Cancel any pending subtitle extraction (it uses a 2nd IPTV connection)
     if (subAbortRef.current) { subAbortRef.current.abort(); subAbortRef.current = null; }
     setCurrentSubText('');
     const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
     if (isElectron && url) {
-      // Use savedTimeRef (persisted) instead of videoRef.currentTime (may be 0 after restart)
       const currentTime = savedTimeRef.current || videoRef.current?.currentTime || 0;
       const isLive = url.includes('/live/') || url.includes('/timeshift/');
-      const streamUrl = isLive ? url.replace(/\.\w+$/, '.ts') : url;
-      console.log('[DashPlayer] Switching audio track to', trackId, 'at position', currentTime, 'url:', streamUrl);
+      console.log('[DashPlayer] Switching audio track to', trackId, 'at position', currentTime, 'url:', url);
+      setLoading(true);
+      setError(null);
       try { await window.dashPlayer.ffmpegStop(); } catch(e) {}
       await new Promise(r => setTimeout(r, 100));
       const result = await window.dashPlayer.ffmpegTranscodeUrl({
-        url: streamUrl, audioTrack: trackId,
+        url: url, audioTrack: trackId,
         seek: !isLive && currentTime > 1 ? Math.floor(currentTime) : undefined,
       });
       console.log('[DashPlayer] Audio switch result:', result.success, result.url ? 'has url' : 'no url');
@@ -1094,6 +1092,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
         videoRef.current.src = result.url;
         videoRef.current.load();
         videoRef.current.play().catch(() => {});
+      } else {
+        setLoading(false);
       }
     }
   };
@@ -1101,8 +1101,8 @@ function VideoPlayer({ url, onClose, title, inline }) {
   // Parse WebVTT text into array of {start, end, text} cues
   const parseVTT = (vttText) => {
     const cues = [];
-    // Support both HH:MM:SS.mmm and MM:SS.mmm formats
-    const timePattern = /(\d{1,2}:?\d{2}:\d{2}[.,]\d{2,3})\s*-->\s*(\d{1,2}:?\d{2}:\d{2}[.,]\d{2,3})/;
+    // Support HH:MM:SS.mmm, MM:SS.mmm, and SS.mmm formats
+    const timePattern = /((?:\d{1,2}:)?\d{1,2}:\d{2}[.,]\d{2,3})\s*-->\s*((?:\d{1,2}:)?\d{1,2}:\d{2}[.,]\d{2,3})/;
     const blocks = vttText.split(/\n\s*\n/);
     for (const block of blocks) {
       const lines = block.trim().split('\n');
@@ -3638,8 +3638,8 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
             <div key={itemId} className="history-item">
               {icon ? <img className="history-icon" src={icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="history-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{type === 'live' ? '\u{1F4FA}' : '\u{1F3AC}'}</div>}
               <div className="history-info" onClick={() => {
-                if (type === 'live' && api) { setPlayingItem({ url: api.getLiveUrl(itemId), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'live', streamId: itemId }); }
-                else if (type === 'vod' && api) { setPlayingItem({ url: api.getVodUrl(itemId), name: itemName }); addToHistory({ id: itemId, name: itemName, icon, type: 'vod', streamId: itemId }); }
+                if (type === 'live' && api) { addToHistory({ id: itemId, name: itemName, icon, type: 'live', streamId: itemId }); onNavigate('live', { stream_id: itemId, name: itemName, stream_icon: icon, type: 'live' }); }
+                else if (type === 'vod' && api) { addToHistory({ id: itemId, name: itemName, icon, type: 'vod', streamId: itemId }); onNavigate('vod', { stream_id: itemId, name: itemName, stream_icon: icon, type: 'vod' }); }
               }} style={{ cursor: 'pointer', flex: 1 }}>
                 <div className="history-name">{itemName}</div>
               </div>
@@ -3695,8 +3695,8 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
               <div className="history-list">
                 {history.map(item => (
                   <div key={item.id} className="history-item" onClick={() => {
-                    if (item.type === 'live' && api) setPlayingItem({ url: api.getLiveUrl(item.streamId), name: item.name });
-                    else if (item.type === 'vod' && api) setPlayingItem({ url: api.getVodUrl(item.streamId), name: item.name });
+                    const section = item.type === 'live' ? 'live' : item.type === 'vod' ? 'vod' : 'series';
+                    onNavigate(section, { stream_id: item.streamId, name: item.name, stream_icon: item.icon, type: item.type });
                   }}>
                     {item.icon ? <img className="history-icon" src={item.icon} alt="" onError={e => e.target.style.display='none'} /> : null}
                     <div className="history-info"><div className="history-name">{item.name}</div><div className="history-meta">{item.type === 'live' ? t('live_tv') : item.type === 'vod' ? t('movie') : t('series')} - {new Date(item.watchedAt).toLocaleDateString()}</div></div>
@@ -3779,7 +3779,6 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
           )}
         </div>
       </div>
-      {playingItem && <VideoPlayer url={playingItem.url} title={playingItem.name} onClose={() => setPlayingItem(null)} />}
       {/* Group Player Mode - Live TV style layout */}
       {groupPlayerMode && api && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
