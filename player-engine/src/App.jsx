@@ -901,18 +901,18 @@ function VideoPlayer({ url, onClose, title, inline }) {
     // Don't auto-probe on mount - probe on demand when user opens track menu
     probedRef.current = false;
 
-    // Detect platform: Electron (desktop) uses FFmpeg, mobile uses direct playback
+    // Detect platform
     const isElectron = !!window.dashPlayer?.ffmpegTranscodeUrl;
-    // Use the URL as-is (getLiveUrl already uses the correct format from playlist config)
-    const streamUrl = url;
+    // Use FFmpeg only for VOD on Electron (audio track switching, subtitle extraction)
+    // Live channels: always use HLS.js direct playback (no FFmpeg needed)
+    const useFfmpeg = isElectron && !isLive;
 
-    // Mobile/web: use HLS.js for .m3u8 streams (Android WebView doesn't support HLS natively)
-    if (!isElectron) {
-      const mobileUrl = isLive ? baseUrl + '.m3u8' : url;
-      console.log('[DashPlayer] Mobile playback:', mobileUrl);
+    // HLS.js / direct playback for live channels (all platforms) and non-Electron VOD
+    if (!useFfmpeg) {
+      const hlsUrl = baseUrl + '.m3u8';
+      console.log('[DashPlayer] Direct playback:', isLive ? hlsUrl : url, isElectron ? '(Electron)' : '(mobile)');
       setCurrentFormat('HLS');
 
-      // Try HLS.js first (works on Android WebView with MSE support)
       if (isLive && Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
@@ -922,7 +922,7 @@ function VideoPlayer({ url, onClose, title, inline }) {
           startFragPrefetch: true,
         });
         hlsRef.current = hls;
-        hls.loadSource(mobileUrl);
+        hls.loadSource(hlsUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           playbackStarted = true;
@@ -933,7 +933,6 @@ function VideoPlayer({ url, onClose, title, inline }) {
           console.log('[DashPlayer] HLS error:', data.type, data.details);
           if (data.fatal) {
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              // Try .ts direct fallback
               console.log('[DashPlayer] HLS fatal network error, trying .ts fallback');
               hls.destroy();
               hlsRef.current = null;
@@ -950,15 +949,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari/native HLS support
-        video.src = mobileUrl;
+        video.src = isLive ? hlsUrl : url;
         video.load();
         video.addEventListener('loadeddata', () => { playbackStarted = true; onPlaying(); }, { once: true });
         video.addEventListener('canplay', () => { playbackStarted = true; onPlaying(); }, { once: true });
         setTimeout(() => { if (video && mountedRef.current) video.play().catch(() => {}); }, 300);
       } else {
-        // Fallback: try .ts direct
-        console.log('[DashPlayer] No HLS support, trying .ts direct');
+        console.log('[DashPlayer] No HLS support, trying direct');
         video.src = isLive ? baseUrl + '.ts' : url;
         video.load();
         video.addEventListener('loadeddata', () => { playbackStarted = true; onPlaying(); }, { once: true });
@@ -980,11 +977,11 @@ function VideoPlayer({ url, onClose, title, inline }) {
       }
       // Capture current generation - if it changes, this playback session is stale
       const myGen = generationRef.current;
-      console.log('[DashPlayer] FFmpeg playing:', streamUrl, 'gen:', myGen);
+      console.log('[DashPlayer] FFmpeg VOD playing:', url, 'gen:', myGen);
       setCurrentFormat('FFmpeg');
       try {
-        const result = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl });
-        if (myGen !== generationRef.current) return; // stale - channel changed
+        const result = await window.dashPlayer.ffmpegTranscodeUrl({ url });
+        if (myGen !== generationRef.current) return;
         if (!result.success || !result.url) {
           console.log('[DashPlayer] FFmpeg URL failed');
           setError('Failed to start playback');
@@ -1008,31 +1005,10 @@ function VideoPlayer({ url, onClose, title, inline }) {
           onPlaying();
         }, { once: true });
 
-        // Error handling with auto-reconnect
-        let reconnecting = false;
         const handleError = async () => {
-          // CRITICAL: ignore errors from stale playback sessions (e.g. cleanup cleared src)
           if (!mountedRef.current || myGen !== generationRef.current) return;
           const errMsg = video.error?.message || '';
           console.log('[DashPlayer] FFmpeg playback error:', errMsg, 'gen:', myGen);
-
-          // Auto-reconnect once for live streams
-          if (playbackStarted && isLive && !reconnecting) {
-            reconnecting = true;
-            console.log('[DashPlayer] Reconnecting FFmpeg...');
-            if (window.dashPlayer?.ffmpegStop) await window.dashPlayer.ffmpegStop().catch(() => {});
-            if (myGen !== generationRef.current) return;
-            const r2 = await window.dashPlayer.ffmpegTranscodeUrl({ url: streamUrl });
-            if (r2.success && r2.url && mountedRef.current && myGen === generationRef.current) {
-              video.src = r2.url;
-              video.load();
-              video.play().catch(() => {});
-            } else if (myGen === generationRef.current) {
-              setError('Stream connection lost');
-            }
-            return;
-          }
-
           if (!playbackStarted) {
             setError('Stream unavailable');
             setLoading(false);
@@ -1089,9 +1065,13 @@ function VideoPlayer({ url, onClose, title, inline }) {
       console.log('[DashPlayer] Audio switch result:', result.success, result.url ? 'has url' : 'no url');
       if (result.success && result.url && videoRef.current) {
         setUsingFfmpeg(true);
-        videoRef.current.src = result.url;
-        videoRef.current.load();
-        videoRef.current.play().catch(() => {});
+        const video = videoRef.current;
+        video.addEventListener('loadeddata', () => { setLoading(false); }, { once: true });
+        video.addEventListener('canplay', () => { setLoading(false); }, { once: true });
+        video.addEventListener('error', () => { setLoading(false); setError('Audio switch failed'); }, { once: true });
+        video.src = result.url;
+        video.load();
+        video.play().catch(() => {});
       } else {
         setLoading(false);
       }
@@ -3638,8 +3618,8 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
             <div key={itemId} className="history-item">
               {icon ? <img className="history-icon" src={icon} alt="" onError={e => e.target.style.display='none'} /> : <div className="history-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{type === 'live' ? '\u{1F4FA}' : '\u{1F3AC}'}</div>}
               <div className="history-info" onClick={() => {
-                if (type === 'live' && api) { addToHistory({ id: itemId, name: itemName, icon, type: 'live', streamId: itemId }); onNavigate('live', { stream_id: itemId, name: itemName, stream_icon: icon, type: 'live' }); }
-                else if (type === 'vod' && api) { addToHistory({ id: itemId, name: itemName, icon, type: 'vod', streamId: itemId }); onNavigate('vod', { stream_id: itemId, name: itemName, stream_icon: icon, type: 'vod' }); }
+                if (type === 'live' && api) { addToHistory({ id: itemId, name: itemName, icon, type: 'live', streamId: itemId }); onNavigate('live', { streamId: itemId, name: itemName, icon, type: 'live' }); }
+                else if (type === 'vod' && api) { addToHistory({ id: itemId, name: itemName, icon, type: 'vod', streamId: itemId }); onNavigate('vod', { streamId: itemId, name: itemName, icon, type: 'vod' }); }
               }} style={{ cursor: 'pointer', flex: 1 }}>
                 <div className="history-name">{itemName}</div>
               </div>
@@ -3696,7 +3676,7 @@ function FavoritesScreen({ onBack, api, onNavigate }) {
                 {history.map(item => (
                   <div key={item.id} className="history-item" onClick={() => {
                     const section = item.type === 'live' ? 'live' : item.type === 'vod' ? 'vod' : 'series';
-                    onNavigate(section, { stream_id: item.streamId, name: item.name, stream_icon: item.icon, type: item.type });
+                    onNavigate(section, { streamId: item.streamId, name: item.name, icon: item.icon, type: item.type });
                   }}>
                     {item.icon ? <img className="history-icon" src={item.icon} alt="" onError={e => e.target.style.display='none'} /> : null}
                     <div className="history-info"><div className="history-name">{item.name}</div><div className="history-meta">{item.type === 'live' ? t('live_tv') : item.type === 'vod' ? t('movie') : t('series')} - {new Date(item.watchedAt).toLocaleDateString()}</div></div>
